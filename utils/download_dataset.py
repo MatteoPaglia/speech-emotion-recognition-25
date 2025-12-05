@@ -62,7 +62,8 @@ def download_iemocap():
     """
     print("\n--- Download IEMOCAP ---")
     # Scarica
-    exit_code = os.system('kaggle datasets download -d mrmorj/iemocap')
+    #exit_code = os.system('kaggle datasets download -d mrmorj/iemocap')
+    exit_code = os.system('kaggle datasets download -d l33tc0d3r/iemocap-full-release')
     
     if exit_code == 0:
         print("Download completato. Estrazione in corso...")
@@ -82,3 +83,9 @@ if __name__ == "__main__":
         download_iemocap()
     else:
         print("Impossibile procedere con i download a causa di errori nel setup.")
+
+
+
+
+
+
