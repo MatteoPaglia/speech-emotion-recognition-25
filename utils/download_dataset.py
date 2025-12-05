@@ -1,79 +1,84 @@
 import os
-# Importiamo google.colab solo se siamo in quell'ambiente per evitare errori locali
-try:
-    from google.colab import files
-except ImportError:
-    print("Nota: google.colab non trovato. Questo script deve girare su Colab.")
-
-import os
 import shutil
 
 def setup_kaggle():
     """
-    Configura Kaggle assumendo che il file kaggle.json sia già stato caricato
-    manualmente nella cartella del progetto.
+    Cerca il file kaggle.json nella stessa cartella di questo script (utils),
+    lo sposta in /root/.kaggle/ e imposta i permessi corretti.
     """
-    json_file = 'kaggle.json'
-    target_dir = '/root/.kaggle'
+    print("--- Configurazione Kaggle ---")
     
-    # 1. Controlla se il file esiste nella directory corrente (dove hai fatto il drag & drop)
-    if not os.path.exists(json_file):
-        print(f"ERRORE: Il file '{json_file}' non è stato trovato nella cartella corrente.")
-        print("Per favore, trascina 'kaggle.json' dentro la cartella del progetto in VS Code prima di eseguire lo script.")
-        return
+    # 1. Ottieni il percorso assoluto della cartella dove si trova questo script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 2. Cerca kaggle.json lì dentro
+    json_source_path = os.path.join(script_dir, 'kaggle.json')
+    print(f"Cerco 'kaggle.json' in: {json_source_path}")
 
-    print(f"File '{json_file}' trovato! Procedo alla configurazione...")
+    if not os.path.exists(json_source_path):
+        print(f"ERRORE: File non trovato in {json_source_path}")
+        print("Assicurati di aver trascinato kaggle.json nella cartella 'utils'!")
+        return False
 
-    # 2. Crea la directory di destinazione
+    # 3. Prepara la destinazione di sistema
+    target_dir = '/root/.kaggle'
+    target_file = os.path.join(target_dir, 'kaggle.json')
+    
     os.makedirs(target_dir, exist_ok=True)
 
-    # 3. Sposta il file (usiamo shutil per sicurezza tra file system)
+    # 4. Copia il file e imposta i permessi
     try:
-        shutil.copy(json_file, os.path.join(target_dir, json_file))
-        print(f"File copiato in {target_dir}")
+        shutil.copy(json_source_path, target_file)
+        # Imposta permessi di lettura/scrittura solo per l'owner (richiesto da Kaggle)
+        os.chmod(target_file, 0o600)
+        print("Configurazione completata! File copiato e permessi impostati.")
+        return True
     except Exception as e:
-        print(f"Errore durante la copia: {e}")
-
-    # 4. Imposta i permessi
-    try:
-        os.chmod(os.path.join(target_dir, json_file), 0o600)
-        print("Permessi impostati correttamente (600).")
-        print("Configurazione completata!")
-    except Exception as e:
-        print(f"Errore impostazione permessi: {e}")
-
-# ... resto delle funzioni download_ravdess e download_iemocap uguali a prima ...
+        print(f"Errore durante la configurazione: {e}")
+        return False
 
 def download_ravdess():
     """
-    Scarica ed estrae RAVDESS.
+    Scarica il dataset RAVDESS da Kaggle e lo estrae.
     """
-    print("Scaricando il dataset RAVDESS...")
-    # Sostituisci ! con os.system
+    print("\n--- Download RAVDESS ---")
+    # Scarica
     exit_code = os.system('kaggle datasets download -d uwrfkaggler/ravdess-emotional-speech-audio')
     
     if exit_code == 0:
         print("Download completato. Estrazione in corso...")
-        os.system('unzip -q ravdess-emotional-speech-audio.zip -d ./ravdess')
-        print("Estrazione completata!")
+        # Estrai nella cartella ./ravdess
+        os.system('unzip -q -o ravdess-emotional-speech-audio.zip -d ./ravdess')
+        
+        # Rimuovi lo zip per risparmiare spazio (opzionale)
+        # os.remove('ravdess-emotional-speech-audio.zip') 
+        print("Dataset RAVDESS pronto in ./ravdess")
     else:
         print("Errore durante il download di RAVDESS.")
 
 def download_iemocap():
     """
-    Scarica ed estrae IEMOCAP.
+    Scarica il dataset IEMOCAP da Kaggle e lo estrae.
     """
-    print("Scaricando il dataset IEMOCAP...")
+    print("\n--- Download IEMOCAP ---")
+    # Scarica
     exit_code = os.system('kaggle datasets download -d mrmorj/iemocap')
     
     if exit_code == 0:
         print("Download completato. Estrazione in corso...")
-        os.system('unzip -q iemocap.zip -d ./iemocap')
-        print("Estrazione completata!")
+        # Estrai nella cartella ./iemocap
+        os.system('unzip -q -o iemocap.zip -d ./iemocap')
+        
+        # Rimuovi lo zip per risparmiare spazio (opzionale)
+        # os.remove('iemocap.zip')
+        print("Dataset IEMOCAP pronto in ./iemocap")
     else:
         print("Errore durante il download di IEMOCAP.")
 
 if __name__ == "__main__":
-    setup_kaggle()
-    download_ravdess()
-    download_iemocap()
+    # Esegui il setup, se va a buon fine scarica i dataset
+    if setup_kaggle():
+        download_ravdess()
+        download_iemocap()
+    else:
+        print("Impossibile procedere con i download a causa di errori nel setup.")
