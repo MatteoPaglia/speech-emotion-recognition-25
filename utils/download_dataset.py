@@ -74,11 +74,6 @@ def download_dataset_via_hub(dataset_slug, target_folder_name):
         print(f"❌ Errore durante il download di {target_folder_name}: {e}")
         return False
 
-import os
-import shutil
-import kagglehub
-
-# ... (tutte le tue funzioni esistenti) ...
 
 def download_dataset_via_hub_selective(dataset_slug, target_folder_name, filter_keyword=None):
     """
