@@ -5,29 +5,44 @@ try:
 except ImportError:
     print("Nota: google.colab non trovato. Questo script deve girare su Colab.")
 
+import os
+import shutil
+
 def setup_kaggle():
     """
-    Carica il file kaggle.json su Colab e configura l'ambiente.
+    Configura Kaggle assumendo che il file kaggle.json sia già stato caricato
+    manualmente nella cartella del progetto.
     """
-    print("Carica il file kaggle.json (scaricato dal tuo account Kaggle)...")
+    json_file = 'kaggle.json'
+    target_dir = '/root/.kaggle'
     
-    # Questo aprirà il widget di upload su Colab
-    uploaded = files.upload() 
+    # 1. Controlla se il file esiste nella directory corrente (dove hai fatto il drag & drop)
+    if not os.path.exists(json_file):
+        print(f"ERRORE: Il file '{json_file}' non è stato trovato nella cartella corrente.")
+        print("Per favore, trascina 'kaggle.json' dentro la cartella del progetto in VS Code prima di eseguire lo script.")
+        return
 
-    # Verifica se il file è stato caricato
-    if 'kaggle.json' in uploaded:
-        # Crea la cartella se non esiste
-        os.makedirs('/root/.kaggle', exist_ok=True)
-        
-        # Sposta il file (usiamo os.rename o os.system per compatibilità)
-        # mv in python è os.rename, ma tra file system diversi meglio shutil o os.system
-        os.system('mv kaggle.json /root/.kaggle/')
-        
-        # Imposta i permessi (chmod 600)
-        os.system('chmod 600 /root/.kaggle/kaggle.json')
+    print(f"File '{json_file}' trovato! Procedo alla configurazione...")
+
+    # 2. Crea la directory di destinazione
+    os.makedirs(target_dir, exist_ok=True)
+
+    # 3. Sposta il file (usiamo shutil per sicurezza tra file system)
+    try:
+        shutil.copy(json_file, os.path.join(target_dir, json_file))
+        print(f"File copiato in {target_dir}")
+    except Exception as e:
+        print(f"Errore durante la copia: {e}")
+
+    # 4. Imposta i permessi
+    try:
+        os.chmod(os.path.join(target_dir, json_file), 0o600)
+        print("Permessi impostati correttamente (600).")
         print("Configurazione completata!")
-    else:
-        print("Errore: file kaggle.json non caricato.")
+    except Exception as e:
+        print(f"Errore impostazione permessi: {e}")
+
+# ... resto delle funzioni download_ravdess e download_iemocap uguali a prima ...
 
 def download_ravdess():
     """
