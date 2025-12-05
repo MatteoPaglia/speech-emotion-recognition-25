@@ -1,6 +1,6 @@
 import os
 import shutil
-import kagglehub
+
 
 def setup_kaggle():
     """
@@ -19,7 +19,7 @@ def setup_kaggle():
     target_file = os.path.join(target_dir, 'kaggle.json')
 
     if not os.path.exists(json_source):
-        print(f"ERRORE: File 'kaggle.json' non trovato in: {json_source}")
+        print(f"❌ ERRORE: File 'kaggle.json' non trovato in: {json_source}")
         print("Assicurati di averlo trascinato nella cartella 'utils'!")
         return False
 
@@ -28,10 +28,10 @@ def setup_kaggle():
     try:
         shutil.copy(json_source, target_file)
         os.chmod(target_file, 0o600) # Permessi richiesti da Kaggle
-        print("Kaggle configurato con successo.")
+        print("✅ Kaggle configurato con successo.")
         return True
     except Exception as e:
-        print(f"Errore configurazione Kaggle: {e}")
+        print(f"❌ Errore configurazione Kaggle: {e}")
         return False
 
 def download_dataset_via_hub(dataset_slug, target_folder_name):
@@ -58,10 +58,10 @@ def download_dataset_via_hub(dataset_slug, target_folder_name):
         print(f"Copia dei file nella cartella di lavoro: {destination_dir}...")
         shutil.copytree(cached_path, destination_dir)
         
-        print(f"{target_folder_name.upper()} pronto in: {destination_dir}")
+        print(f"✅ {target_folder_name.upper()} pronto in: {destination_dir}")
         
     except Exception as e:
-        print(f"Errore durante il download di {target_folder_name}: {e}")
+        print(f"❌ Errore durante il download di {target_folder_name}: {e}")
 
 def download_ravdess():
     # Dataset RAVDESS originale
