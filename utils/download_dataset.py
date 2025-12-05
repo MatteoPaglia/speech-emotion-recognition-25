@@ -1,5 +1,6 @@
 import os
 import shutil
+import kagglehub
 
 def setup_kaggle():
     """
