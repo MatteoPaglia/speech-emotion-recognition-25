@@ -69,7 +69,8 @@ def download_ravdess():
 
 def download_iemocap():
     # Dataset IEMOCAP (Versione alternativa per evitare errore 403)
-    download_dataset_via_hub("samuelsamsudinng/iemocap-emotion-speech-database", "iemocap")
+    #download_dataset_via_hub("samuelsamsudinng/iemocap-emotion-speech-database", "iemocap")
+    download_dataset_via_hub("columbine/iemocap", "iemocap")
 
 if __name__ == "__main__":
     # Esegui il setup e poi i download
