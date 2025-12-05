@@ -1,6 +1,3 @@
-import os
-import shutil
-
 def setup_kaggle():
     """
     Cerca il file kaggle.json nella stessa cartella dello script (utils)
