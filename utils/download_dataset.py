@@ -74,7 +74,73 @@ def download_dataset_via_hub(dataset_slug, target_folder_name):
         print(f"❌ Errore durante il download di {target_folder_name}: {e}")
         return False
 
+import os
+import shutil
+import kagglehub
 
+# ... (tutte le tue funzioni esistenti) ...
+
+def download_dataset_via_hub_selective(dataset_slug, target_folder_name, filter_keyword=None):
+    """
+    Scarica un dataset e copia selettivamente solo le cartelle/file
+    che contengono 'filter_keyword' (case-insensitive) nel nome del percorso.
+    """
+    print(f"\n--- Download {target_folder_name.upper()} ---")
+    
+    destination_dir = f"./{target_folder_name}"
+    
+    try:
+        # 1. Scarica (o recupera dalla cache)
+        print(f"Contatto KaggleHub per scaricare: {dataset_slug}...")
+        cached_path = kagglehub.dataset_download(dataset_slug)
+        print(f"✓ Dataset scaricato nella cache di sistema: {cached_path}")
+
+        # ... (Omissione punti 2 e 3 per brevità, sono gli stessi) ...
+
+        # Pulisci la destinazione se esiste già
+        if os.path.exists(destination_dir):
+            print(f"La cartella locale '{destination_dir}' esiste già. La rimuovo per aggiornarla...")
+            shutil.rmtree(destination_dir)
+        os.makedirs(destination_dir, exist_ok=True) # Crea la cartella principale
+
+        # 4. Copia SELETTIVA dalla cache alla cartella del progetto
+        print(f"Inizio la copia selettiva (cercando: '{filter_keyword}')...")
+        num_files_copied = 0
+        
+        # Attraversa ricorsivamente la cartella scaricata
+        for root, dirs, files in os.walk(cached_path):
+            # Calcola il percorso relativo all'interno del dataset
+            relative_path = os.path.relpath(root, cached_path)
+            
+            # Criterio di filtro: Ignora se non è la radice e non contiene la parola chiave
+            if filter_keyword and filter_keyword.lower() not in relative_path.lower():
+                # Esempio: salta la cartella /content/iemocap/Session1/dialog/transcriptions/Ses01F_Script01
+                # ma non salta Ses01F_Impro01
+                continue
+                
+            # Calcola il percorso di destinazione
+            dest_path = os.path.join(destination_dir, relative_path)
+            
+            # Se la cartella di destinazione non esiste, la crea
+            os.makedirs(dest_path, exist_ok=True)
+            
+            # Copia i file presenti in questa sottocartella
+            for file in files:
+                # Puoi aggiungere un filtro anche sui tipi di file se necessario (es. solo .wav)
+                source_file = os.path.join(root, file)
+                dest_file = os.path.join(dest_path, file)
+                shutil.copy2(source_file, dest_file) # copy2 copia anche i metadati
+                num_files_copied += 1
+
+        # 5. Verifica finale
+        print(f"✅ {target_folder_name.upper()} pronto in: {destination_dir}")
+        print(f"✅ Numero totale di file copiati: {num_files_copied}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Errore durante il download selettivo di {target_folder_name}: {e}")
+        return False
+    
 def download_ravdess():
     """Scarica il dataset RAVDESS"""
     return download_dataset_via_hub("uwrfkaggler/ravdess-emotional-speech-audio", "ravdess")
@@ -82,13 +148,14 @@ def download_ravdess():
 
 def download_iemocap():
     """
-    Scarica il dataset IEMOCAP usando il dataset che funziona.
-    Questo dataset NON dà errore 403.
+    Scarica solo i file di improvvisazione dal dataset IEMOCAP.
     """
-    print("\n⚠️  NOTA: Sto usando il dataset 'dejolilandry/iemocapfullrelease'")
-    print("    che è verificato funzionante e non dà errore 403.\n")
-    
-    return download_dataset_via_hub("dejolilandry/iemocapfullrelease", "iemocap")
+    print("\n⚠️  NOTA: Sto scaricando solo i dati di 'improvvisazione' (Impro).")
+    return download_dataset_via_hub_selective(
+        "dejolilandry/iemocapfullrelease", 
+        "iemocap", 
+        filter_keyword="Impro" # <-- Filtro applicato qui
+    )
 
 
 if __name__ == "__main__":
