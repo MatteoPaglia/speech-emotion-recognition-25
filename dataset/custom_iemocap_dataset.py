@@ -10,6 +10,8 @@ including only the necessary data for emotion recognition tasks:
 It supports train/test splitting, data caching, and efficient data loading.
 For this task only improvised audio samples are considered.
 
+Esempio di file : IEMOCAP_full_release/Session4/sentences/MOCAP_hand/Ses04F_impro06/Ses04F_impro06_F002.txt
+mi serve tutta la cartella perchè ha tralasciato cartelle importanti ? 
 """
 
 import os
@@ -50,9 +52,6 @@ class CustomIEMOCAPDataset(Dataset):
         
         # Split into train/test
         self._split_dataset()
-        
-        # Preload metadata (gt.yml and info.yml files)
-        self._preload_metadata()
      
         
         print(f"✅ Dataset initialized: {len(self.samples)} {split} samples")

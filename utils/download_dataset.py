@@ -106,7 +106,7 @@ def download_ravdess():
 
 
 def download_iemocap():
-    return download_dataset_via_hub("dejolilandry/iemocapfullrelease", "iemocap", filter_keyword="Impro")
+    return download_dataset_via_hub("dejolilandry/iemocapfullrelease", "iemocap")
 
 
 if __name__ == "__main__":
