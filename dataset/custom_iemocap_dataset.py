@@ -64,13 +64,46 @@ class CustomIEMOCAPDataset(Dataset):
         """Collect all available samples from the dataset."""
         samples = []
         
-        data_dir = self.dataset_root
-        print(f"📂 Scanning dataset directory: {data_dir}")
+        # Detect environment and adjust path
+        if os.path.exists('/root/.cache/kagglehub/datasets/dejolilandry/iemocapfullrelease/versions/1'):
+            # kagglehub cache
+            data_dir = Path('/root/.cache/kagglehub/datasets/dejolilandry/iemocapfullrelease/versions/1/IEMOCAP_full_release')
+            print(f"📂 Detected kagglehub cache, using: {data_dir}")
+        elif os.path.exists('/kaggle/input/iemocapfullrelease'):
+            # Running on Kaggle
+            data_dir = Path('/kaggle/input/iemocapfullrelease')
+            print(f"📂 Detected Kaggle environment, using: {data_dir}")
+        else:
+            # Local or Colab - check if dataset_root contains IEMOCAP_full_release
+            data_dir = self.dataset_root / "IEMOCAP_full_release"
+            if not data_dir.exists():
+                # If not, use dataset_root directly
+                data_dir = self.dataset_root
+        
+        if not data_dir.exists():
+            raise FileNotFoundError(f"Data directory not found: {data_dir}")
+        
+        print(f"📂 Starting to collect samples from: {data_dir}")
+        
+        # Check if data_dir is empty
+        try:
+            items = list(data_dir.iterdir())
+            print(f"📂 Found {len(items)} items in directory")
+            for item in items[:5]:
+                print(f"   - {item.name} {'(dir)' if item.is_dir() else '(file)'}")
+            if len(items) > 5:
+                print(f"   ... and {len(items) - 5} more items")
+        except Exception as e:
+            print(f"❌ Error reading directory: {e}")
+            return samples
         
         # Iterate through all object folders (Session1, Session2, etc.)
+        session_count = 0
         for folder in sorted(data_dir.iterdir()):
             if folder.is_dir():
+                print(f"   Checking folder: {folder.name}")
                 if(folder.name.startswith("Session")):
+                    session_count += 1
                     folder_id = folder.name[-1]  # Extract folder ID (e.g., '1' from 'Session1')
                     print(f"\n📁 Processing {folder.name} (Session ID: {folder_id})")
                     
@@ -119,7 +152,8 @@ class CustomIEMOCAPDataset(Dataset):
                             
                             samples.append(sample_data)
         
-        print(f"\n✅ Collected {len(samples)} samples in total")
+        print(f"\n✅ Total sessions found: {session_count}")
+        print(f"✅ Collected {len(samples)} samples in total")
         return samples
     
     def _split_dataset(self,session_train=['1','2','3'], session_val=['4'], session_test=['5']):
