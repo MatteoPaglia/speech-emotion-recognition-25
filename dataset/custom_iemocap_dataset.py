@@ -63,7 +63,7 @@ class CustomIEMOCAPDataset(Dataset):
     def _collect_samples(self):
         """Collect all available samples from the dataset."""
         samples = []
-        data_dir =  "directory of dataset "
+        data_dir = self.dataset_root / "IEMOCAP_full_release"
         
         if not data_dir.exists():
             raise FileNotFoundError(f"Data directory not found: {data_dir}")
