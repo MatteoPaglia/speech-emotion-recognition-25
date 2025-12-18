@@ -107,7 +107,7 @@ class CustomIEMOCAPDataset(Dataset):
                             label_file = label_folder / f"{folder_sample.name}.txt" #es. IEMOCAP_full_release/Session4/dialog/EmoEvaluation/Ses01F_impro06.txt
                             print(f"      Looking for label file: {label_file}")
                             #Open Label file and extract label for the sample Ses04F_impro06_F002, search the line that contains the sample_id, split and after the name there is the label
-                            try:
+                            """ try:
                                 with open(label_file, 'r') as f:
                                     for line in f:
                                         if sample_id in line:
@@ -118,7 +118,7 @@ class CustomIEMOCAPDataset(Dataset):
                                             print(f"      ✓ {sample_id} → Label: {emotion_label}")
                                             break
                             except FileNotFoundError:
-                                print(f"      ⚠ Label file not found: {label_file}")
+                                print(f"      ⚠ Label file not found: {label_file}") """
                             
                             samples.append(sample_data)
         
