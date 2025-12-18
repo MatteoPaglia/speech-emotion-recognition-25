@@ -39,21 +39,20 @@ class CustomRAVDESSDataset(Dataset):
     MODALITY_AUDIO_ONLY = '03'  # Solo audio (no video)
     VOCAL_CHANNEL_SPEECH = '01'  # Solo speech (no song)
     
-    def __init__(self, dataset_root, split='train', validation_ratio=0.1, test_ratio=0.1, seed=42, transform=None):
+    def __init__(self, dataset_root, split='train', transform=None):
         """
         Args:
             dataset_root (str): Path to the RAVDESS dataset root folder
             split (str): 'train', 'validation', or 'test'
-            validation_ratio (float): Proportion of actors for validation (default: 0.1)
-            test_ratio (float): Proportion of actors for test (default: 0.1)
-            seed (int): Random seed for reproducibility
             transform (callable, optional): Optional transform to be applied on audio
+            
+        Split fisso:
+            - Train: Actors 01-20 (10M + 10F)
+            - Validation: Actors 21-22 (1M + 1F)
+            - Test: Actors 23-24 (1M + 1F)
         """
         self.dataset_root = Path(dataset_root)
         self.split = split
-        self.validation_ratio = validation_ratio
-        self.test_ratio = test_ratio
-        self.seed = seed
         
         #fare un file di config per gli hyperparameters?
 
