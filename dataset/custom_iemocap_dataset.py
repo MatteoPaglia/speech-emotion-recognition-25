@@ -214,6 +214,45 @@ class CustomIEMOCAPDataset(Dataset):
             'session_id': session_id,
             'impro_id': impro_id
         }
-       
-        
 
+
+def collate_fn_iemocap(batch):
+    """
+    Custom collate function to handle variable-length spectrograms.
+    Pads all spectrograms to the maximum time dimension in the batch.
+    """
+    import torch
+    import torch.nn.functional as F
+    
+    # Find max time dimension
+    max_time = max([item['audio_features'].shape[2] for item in batch])
+    
+    # Pad all spectrograms
+    padded_features = []
+    for item in batch:
+        features = item['audio_features']
+        current_time = features.shape[2]
+        
+        if current_time < max_time:
+            # Pad on the right side of time dimension (constant 0)
+            padding = (0, max_time - current_time)
+            features = F.pad(features, padding, mode='constant', value=0)
+        
+        padded_features.append(features)
+    
+    # Stack padded features
+    batch_audio = torch.stack(padded_features)
+    
+    # Stack other fields
+    batch_labels = torch.tensor([item['label'] for item in batch], dtype=torch.long)
+    batch_speakers = [item['speaker_id'] for item in batch]
+    batch_sessions = [item['session_id'] for item in batch]
+    batch_impro_ids = [item['impro_id'] for item in batch]
+    
+    return {
+        'audio_features': batch_audio,
+        'label': batch_labels,
+        'speaker_id': batch_speakers,
+        'session_id': batch_sessions,
+        'impro_id': batch_impro_ids
+    }
