@@ -15,6 +15,7 @@ For this task only acted audio samples are considered.
 import os
 import yaml
 import torch
+import torchaudio
 import numpy as np
 from PIL import Image
 from pathlib import Path
@@ -39,12 +40,13 @@ class CustomRAVDESSDataset(Dataset):
     MODALITY_AUDIO_ONLY = '03'  # Solo audio (no video)
     VOCAL_CHANNEL_SPEECH = '01'  # Solo speech (no song)
     
-    def __init__(self, dataset_root, split='train', transform=None):
+    def __init__(self, dataset_root, split='train', transform=None, target_sample_rate=16000):
         """
         Args:
             dataset_root (str): Path to the RAVDESS dataset root folder
             split (str): 'train', 'validation', or 'test'
-            transform (callable, optional): Optional transform to be applied on audio
+            transform (callable, optional): Optional transform to be applied on audio waveform
+            target_sample_rate (int): Target sample rate for audio resampling (default: 16kHz)
             
         Split fisso:
             - Train: Actors 01-20 (10M + 10F)
@@ -53,16 +55,8 @@ class CustomRAVDESSDataset(Dataset):
         """
         self.dataset_root = Path(dataset_root)
         self.split = split
-        
-        #fare un file di config per gli hyperparameters?
-
-        # Define audio transformations
-        if transform is None:
-            self.transform = transforms.Compose([
-                transforms.ToTensor(),
-            ])
-        else:
-            self.transform = transform
+        self.transform = transform
+        self.target_sample_rate = target_sample_rate
         
         # Collect all samples (folder_id, sample_id)
         self.samples = self._collect_samples()
@@ -239,6 +233,58 @@ class CustomRAVDESSDataset(Dataset):
         return len(self.samples)
     
     def __getitem__(self, idx):
-        """Retrieve a single sample by index."""
-        return None
+        """
+        Retrieve a single sample by index.
+        
+        Returns:
+            dict with keys:
+                - 'audio': Audio waveform tensor [1, num_samples]
+                - 'sample_rate': Sample rate of the audio
+                - 'emotion': Emotion label (string)
+                - 'emotion_id': Emotion ID (int, 0-indexed)
+                - 'actor': Actor ID (int)
+                - 'path': Path to the audio file
+                - 'metadata': Full metadata dict
+        """
+        # Get sample info
+        sample = self.samples[idx]
+        audio_path = sample['path']
+        metadata = sample['metadata']
+        
+        # Load audio file using torchaudio
+        waveform, sample_rate = torchaudio.load(audio_path)
+        
+        # Resample if necessary
+        if sample_rate != self.target_sample_rate:
+            resampler = torchaudio.transforms.Resample(
+                orig_freq=sample_rate,
+                new_freq=self.target_sample_rate
+            )
+            waveform = resampler(waveform)
+            sample_rate = self.target_sample_rate
+        
+        # Convert to mono if stereo (average channels)
+        if waveform.shape[0] > 1:
+            waveform = torch.mean(waveform, dim=0, keepdim=True)
+        
+        # Apply custom transform if provided
+        if self.transform is not None:
+            waveform = self.transform(waveform)
+        
+        # Map emotion code to 0-indexed ID
+        # '01' -> 0, '03' -> 1, '04' -> 2, '05' -> 3
+        emotion_code = metadata['emotion']
+        emotion_mapping = {'01': 0, '03': 1, '04': 2, '05': 3}
+        emotion_id = emotion_mapping[emotion_code]
+        
+        return {
+            'audio': waveform,                      # [1, num_samples]
+            'sample_rate': sample_rate,             # int
+            'emotion': metadata['emotion_label'],    # string: 'neutral', 'happy', 'sad', 'angry'
+            'emotion_id': emotion_id,               # int: 0, 1, 2, 3
+            'actor': int(metadata['actor']),        # int: 1-24
+            'intensity': int(metadata['intensity']), # int: 1 or 2
+            'path': str(audio_path),                # string path
+            'metadata': metadata                     # full metadata dict
+        }
 
