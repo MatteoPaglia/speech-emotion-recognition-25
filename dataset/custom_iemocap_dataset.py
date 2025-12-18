@@ -65,7 +65,11 @@ class CustomIEMOCAPDataset(Dataset):
         samples = []
         
         # Detect environment and adjust path
-        if os.path.exists('/kaggle/input/iemocapfullrelease'):
+        if os.path.exists('/root/.cache/kagglehub/datasets/dejolilandry/iemocapfullrelease'):
+            # kagglehub cache
+            data_dir = Path('/root/.cache/kagglehub/datasets/dejolilandry/iemocapfullrelease/versions/1')
+            print(f"📂 Detected kagglehub cache, using: {data_dir}")
+        elif os.path.exists('/kaggle/input/iemocapfullrelease'):
             # Running on Kaggle
             data_dir = Path('/kaggle/input/iemocapfullrelease')
             print(f"📂 Detected Kaggle environment, using: {data_dir}")
