@@ -75,7 +75,7 @@ class CustomIEMOCAPDataset(Dataset):
                     folder_id = folder.name[-1]  # Extract folder ID (e.g., '1' from 'Session1')
                     
                     # Collect in sentence forlder for improvised samples only
-                    sentence_folder = folder / "sentences" / "waw"
+                    sentence_folder = folder / "sentences" / "wav"
                     for folder_sample in sentence_folder.iterdir():
                         if folder_sample.name.contains("impro"):
                             sample_data = {
