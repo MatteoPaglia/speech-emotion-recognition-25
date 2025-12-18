@@ -69,35 +69,19 @@ class CustomIEMOCAPDataset(Dataset):
         
         print(f"📂 Starting to collect samples from: {data_dir}")
         
-        # Check if data_dir is empty
-        try:
-            items = list(data_dir.iterdir())
-            print(f"📂 Found {len(items)} items in directory")
-            for item in items[:5]:
-                print(f"   - {item.name} {'(dir)' if item.is_dir() else '(file)'}")
-            if len(items) > 5:
-                print(f"   ... and {len(items) - 5} more items")
-        except Exception as e:
-            print(f"❌ Error reading directory: {e}")
-            return samples
-        
         # Iterate through all object folders (Session1, Session2, etc.)
         session_count = 0
         for folder in sorted(data_dir.iterdir()):
             if folder.is_dir():
-                print(f"   Checking folder: {folder.name}")
                 if(folder.name.startswith("Session")):
                     session_count += 1
                     folder_id = folder.name[-1]  # Extract folder ID (e.g., '1' from 'Session1')
-                    print(f"\n📁 Processing {folder.name} (Session ID: {folder_id})")
                     
                     # Collect in sentence forlder for improvised samples only
                     sentence_folder = folder / "sentences" / "wav"
-                    print(f"   └─ Looking for audio in: {sentence_folder}")
                     
                     for folder_sample in sentence_folder.iterdir():
                         if "impro" in folder_sample.name:
-                            print(f"   └─ Found impro folder: {folder_sample.name}")
                             sample_data = {
                                 'session_id': folder_id, #es. '1'
                                 'audio_path': None, # es. IEMOCAP_full_release/Session4/sentences/MOCAP_hand/Ses04F_impro06/Ses04F_impro06_F002.wav
@@ -119,7 +103,6 @@ class CustomIEMOCAPDataset(Dataset):
 
                             label_folder = folder / "dialog" / "EmoEvaluation"
                             label_file = label_folder / f"{folder_sample.name}.txt" #es. IEMOCAP_full_release/Session4/dialog/EmoEvaluation/Ses01F_impro06.txt
-                            print(f"      Looking for label file: {label_file}")
                             #Open Label file and extract label for the sample Ses04F_impro06_F002, search the line that contains the sample_id, split and after the name there is the label
                             try:
                                 with open(label_file, 'r') as f:
@@ -129,7 +112,6 @@ class CustomIEMOCAPDataset(Dataset):
                                             # Example of line : [6.2901 - 8.2357]	Ses01F_impro01_F000	neu	[2.5000, 2.5000, 2.5000]
                                             emotion_label = parts[2]  # Extract the emotion label
                                             sample_data['label'] = emotion_label
-                                            print(f"      ✓ {sample_id} → Label: {emotion_label}")
                                             break
                             except FileNotFoundError:
                                 print(f"      ⚠ Label file not found: {label_file}")
