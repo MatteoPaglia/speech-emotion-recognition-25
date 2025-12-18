@@ -96,7 +96,7 @@ class CustomIEMOCAPDataset(Dataset):
                     print(f"   └─ Looking for audio in: {sentence_folder}")
                     
                     for folder_sample in sentence_folder.iterdir():
-                        if folder_sample.name.contains("impro"):
+                        if "impro" in folder_sample.name:
                             print(f"   └─ Found impro folder: {folder_sample.name}")
                             sample_data = {
                                 'session_id': folder_id, #es. '1'
