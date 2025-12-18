@@ -165,96 +165,63 @@ class CustomRAVDESSDataset(Dataset):
 
     def _split_dataset(self):
         """
-        Split dataset into train/validation/test sets usando speaker-independent split.
-        Caratteristiche:
-        - Nessun attore ripetuto tra i set (speaker-independent)
-        - Circa 10% campioni in validation e test (basato su validation_ratio e test_ratio)
-        - Bilanciamento per genere (maschi: attori dispari, femmine: attori pari)
+        Split dataset into train/validation/test sets con split fisso basato su ID attori.
+        
+        Split predefinito:
+        - Training: Actors 01-20 (10 maschi dispari + 10 femmine pari)
+        - Validation: Actors 21-22 (1 maschio dispari + 1 femmina pari)
+        - Test: Actors 23-24 (1 maschio dispari + 1 femmina pari)
+        
+        Questo garantisce:
+        - Speaker-independent (nessun attore ripetuto tra i set)
+        - Split deterministico (sempre uguale)
+        - Bilanciamento perfetto di genere
         """
         if len(self.samples) == 0:
             raise ValueError("No samples found in dataset!")
         
-        # Raggruppa campioni per attore
-        from collections import defaultdict
-        actor_samples = defaultdict(list)
-        for sample in self.samples:
-            actor_id = int(sample['metadata']['actor'])
-            actor_samples[actor_id].append(sample)
+        # Split fisso basato su ID attori
+        train_actors = set(range(1, 21))      # 1-20
+        validation_actors = set([21, 22])     # 21-22
+        test_actors = set([23, 24])           # 23-24
         
-        # Conta campioni per attore
-        actor_counts = {actor: len(samples) for actor, samples in actor_samples.items()}
-        total_samples = len(self.samples)
+        # Verifica quali attori sono effettivamente presenti nei dati
+        available_actors = set([int(s['metadata']['actor']) for s in self.samples])
         
-        # Separa attori per genere (dispari=maschi, pari=femmine)
-        male_actors = [a for a in actor_counts.keys() if a % 2 == 1]  # Odd = male
-        female_actors = [a for a in actor_counts.keys() if a % 2 == 0]  # Even = female
+        # Filtra solo gli attori presenti
+        train_actors = train_actors & available_actors
+        validation_actors = validation_actors & available_actors
+        test_actors = test_actors & available_actors
         
-        print(f"📊 Totale campioni: {total_samples}")
-        print(f"📊 Totale attori: {len(actor_samples)}")
-        print(f"   👨 Maschi (dispari): {sorted(male_actors)}")
-        print(f"   👩 Femmine (pari): {sorted(female_actors)}")
-        
-        # Funzione helper per splittare un gruppo di attori
-        def split_actors_by_samples(actors_list, target_ratio_test, target_ratio_val):
-            """Split actors cercando di raggiungere i target ratio sui campioni."""
-            # Shuffle con seed
-            np.random.seed(self.seed)
-            shuffled = actors_list.copy()
-            np.random.shuffle(shuffled)
-            
-            # Calcola target campioni per questo gruppo
-            total_group_samples = sum(actor_counts[a] for a in actors_list)
-            target_test = int(total_group_samples * target_ratio_test)
-            target_val = int(total_group_samples * target_ratio_val)
-            
-            test_set = []
-            val_set = []
-            train_set = []
-            
-            test_count = 0
-            val_count = 0
-            
-            for actor in shuffled:
-                n_samples = actor_counts[actor]
-                
-                if test_count < target_test:
-                    test_set.append(actor)
-                    test_count += n_samples
-                elif val_count < target_val:
-                    val_set.append(actor)
-                    val_count += n_samples
-                else:
-                    train_set.append(actor)
-            
-            return train_set, val_set, test_set
-        
-        # Split separato per maschi e femmine (per bilanciamento genere)
-        train_male, val_male, test_male = split_actors_by_samples(
-            male_actors, self.test_ratio, self.validation_ratio
-        )
-        train_female, val_female, test_female = split_actors_by_samples(
-            female_actors, self.test_ratio, self.validation_ratio
-        )
-        
-        # Combina i set
-        train_actors = set(train_male + train_female)
-        validation_actors = set(val_male + val_female)
-        test_actors = set(test_male + test_female)
-        
-        # Conta campioni effettivi per ogni set
+        # Conta campioni per ogni set
         train_samples_list = [s for s in self.samples if int(s['metadata']['actor']) in train_actors]
         val_samples_list = [s for s in self.samples if int(s['metadata']['actor']) in validation_actors]
         test_samples_list = [s for s in self.samples if int(s['metadata']['actor']) in test_actors]
         
-        print(f"\n🔀 Split risultante:")
-        print(f"   Train: {len(train_actors)} attori ({len(train_male)}M+{len(train_female)}F), {len(train_samples_list)} campioni ({len(train_samples_list)/total_samples*100:.1f}%)")
-        print(f"   Validation: {len(validation_actors)} attori ({len(val_male)}M+{len(val_female)}F), {len(val_samples_list)} campioni ({len(val_samples_list)/total_samples*100:.1f}%)")
-        print(f"   Test: {len(test_actors)} attori ({len(test_male)}M+{len(test_female)}F), {len(test_samples_list)} campioni ({len(test_samples_list)/total_samples*100:.1f}%)")
+        total_samples = len(self.samples)
+        
+        # Statistiche genere per ogni set
+        def get_gender_stats(actors_set):
+            males = [a for a in actors_set if a % 2 == 1]
+            females = [a for a in actors_set if a % 2 == 0]
+            return len(males), len(females), males, females
+        
+        train_m, train_f, train_males, train_females = get_gender_stats(train_actors)
+        val_m, val_f, val_males, val_females = get_gender_stats(validation_actors)
+        test_m, test_f, test_males, test_females = get_gender_stats(test_actors)
+        
+        print(f"📊 Totale campioni: {total_samples}")
+        print(f"📊 Totale attori disponibili: {len(available_actors)}")
+        
+        print(f"\n🔀 Split fisso predefinito:")
+        print(f"   Train:      Actors 01-20 ({train_m}M+{train_f}F) → {len(train_samples_list)} campioni ({len(train_samples_list)/total_samples*100:.1f}%)")
+        print(f"   Validation: Actors 21-22 ({val_m}M+{val_f}F) → {len(val_samples_list)} campioni ({len(val_samples_list)/total_samples*100:.1f}%)")
+        print(f"   Test:       Actors 23-24 ({test_m}M+{test_f}F) → {len(test_samples_list)} campioni ({len(test_samples_list)/total_samples*100:.1f}%)")
         
         print(f"\n👥 Attori assegnati:")
-        print(f"   Train: {sorted(train_actors)}")
+        print(f"   Train:      {sorted(train_actors)}")
         print(f"   Validation: {sorted(validation_actors)}")
-        print(f"   Test: {sorted(test_actors)}")
+        print(f"   Test:       {sorted(test_actors)}")
         
         # Filtra i samples in base agli attori
         if self.split == 'train':
