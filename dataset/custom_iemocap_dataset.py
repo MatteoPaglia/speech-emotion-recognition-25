@@ -105,6 +105,7 @@ class CustomIEMOCAPDataset(Dataset):
 
                             label_folder = folder / "dialog" / "EmoEvaluation"
                             label_file = label_folder / f"{folder_sample.name}.txt" #es. IEMOCAP_full_release/Session4/dialog/EmoEvaluation/Ses01F_impro06.txt
+                            print(f"      Looking for label file: {label_file}")
                             #Open Label file and extract label for the sample Ses04F_impro06_F002, search the line that contains the sample_id, split and after the name there is the label
                             try:
                                 with open(label_file, 'r') as f:
