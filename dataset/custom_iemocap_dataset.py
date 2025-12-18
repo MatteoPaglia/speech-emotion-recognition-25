@@ -68,16 +68,22 @@ class CustomIEMOCAPDataset(Dataset):
         if not data_dir.exists():
             raise FileNotFoundError(f"Data directory not found: {data_dir}")
         
+        print(f"📂 Starting to collect samples from: {data_dir}")
+        
         # Iterate through all object folders (Session1, Session2, etc.)
         for folder in sorted(data_dir.iterdir()):
             if folder.is_dir():
                 if(folder.name.startswith("Session")):
                     folder_id = folder.name[-1]  # Extract folder ID (e.g., '1' from 'Session1')
+                    print(f"\n📁 Processing {folder.name} (Session ID: {folder_id})")
                     
                     # Collect in sentence forlder for improvised samples only
                     sentence_folder = folder / "sentences" / "wav"
+                    print(f"   └─ Looking for audio in: {sentence_folder}")
+                    
                     for folder_sample in sentence_folder.iterdir():
                         if folder_sample.name.contains("impro"):
+                            print(f"   └─ Found impro folder: {folder_sample.name}")
                             sample_data = {
                                 'session_id': folder_id, #es. '1'
                                 'audio_path': None, # es. IEMOCAP_full_release/Session4/sentences/MOCAP_hand/Ses04F_impro06/Ses04F_impro06_F002.wav
@@ -100,17 +106,22 @@ class CustomIEMOCAPDataset(Dataset):
                             label_folder = folder / "dialog" / "EmoEvaluation"
                             label_file = label_folder / f"{folder_sample.name}.txt" #es. IEMOCAP_full_release/Session4/dialog/EmoEvaluation/Ses01F_impro06.txt
                             #Open Label file and extract label for the sample Ses04F_impro06_F002, search the line that contains the sample_id, split and after the name there is the label
-                            with open(label_file, 'r') as f:
-                                for line in f:
-                                    if sample_id in line:
-                                        parts = line.strip().split('\t')
-                                        # Example of line : [6.2901 - 8.2357]	Ses01F_impro01_F000	neu	[2.5000, 2.5000, 2.5000]
-                                        emotion_label = parts[2]  # Extract the emotion label
-                                        sample_data['label'] = emotion_label
-                                        break
+                            try:
+                                with open(label_file, 'r') as f:
+                                    for line in f:
+                                        if sample_id in line:
+                                            parts = line.strip().split('\t')
+                                            # Example of line : [6.2901 - 8.2357]	Ses01F_impro01_F000	neu	[2.5000, 2.5000, 2.5000]
+                                            emotion_label = parts[2]  # Extract the emotion label
+                                            sample_data['label'] = emotion_label
+                                            print(f"      ✓ {sample_id} → Label: {emotion_label}")
+                                            break
+                            except FileNotFoundError:
+                                print(f"      ⚠ Label file not found: {label_file}")
                             
                             samples.append(sample_data)
         
+        print(f"\n✅ Collected {len(samples)} samples in total")
         return samples
     
     def _split_dataset(self,session_train=['1','2','3'], session_val=['4'], session_test=['5']):
