@@ -64,23 +64,8 @@ class CustomIEMOCAPDataset(Dataset):
         """Collect all available samples from the dataset."""
         samples = []
         
-        # Detect environment and adjust path
-        if os.path.exists('/root/.cache/kagglehub/datasets/dejolilandry/iemocapfullrelease'):
-            # kagglehub cache
-            data_dir = Path('/root/.cache/kagglehub/datasets/dejolilandry/iemocapfullrelease/versions/1')
-            print(f"📂 Detected kagglehub cache, using: {data_dir}")
-        elif os.path.exists('/kaggle/input/iemocapfullrelease'):
-            # Running on Kaggle
-            data_dir = Path('/kaggle/input/iemocapfullrelease')
-            print(f"📂 Detected Kaggle environment, using: {data_dir}")
-        else:
-            # Local or Colab
-            data_dir = self.dataset_root
-        
-        if not data_dir.exists():
-            raise FileNotFoundError(f"Data directory not found: {data_dir}")
-        
-        print(f"📂 Starting to collect samples from: {data_dir}")
+        data_dir = self.dataset_root
+        print(f"📂 Scanning dataset directory: {data_dir}")
         
         # Iterate through all object folders (Session1, Session2, etc.)
         for folder in sorted(data_dir.iterdir()):
