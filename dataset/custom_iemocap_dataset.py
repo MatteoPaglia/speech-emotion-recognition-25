@@ -27,20 +27,16 @@ import librosa
 
 class CustomIEMOCAPDataset(Dataset):
     
-    def __init__(self, dataset_root, split='train', train_ratio=0.8, seed=42, transform=None):
+    def __init__(self, dataset_root, split='train', transform=None):
         
         self.dataset_root = Path(dataset_root)
         self.split = split
-        self.train_ratio = train_ratio
-        self.seed = seed
         
         # Audio processing parameters
         self.sample_rate = 16000  # 16 kHz
         self.n_fft = 2048         # FFT size
         self.hop_length = 512     # Hop length for STFT
         self.use_mfcc = False     # Set to True to use MFCC instead of log spectrogram
-        
-        #fare un file di config per gli hyperparameters?
 
         # Define audio transformations
         if transform is None:
@@ -67,7 +63,7 @@ class CustomIEMOCAPDataset(Dataset):
         # Use dataset_root directly (should already point to IEMOCAP_full_release or equivalent)
         data_dir = self.dataset_root
         
-        print(f"📂 Starting to collect samples from: {data_dir}")
+        print(f"Starting to collect samples from: {data_dir}")
         
         # Iterate through all object folders (Session1, Session2, etc.)
         session_count = 0
