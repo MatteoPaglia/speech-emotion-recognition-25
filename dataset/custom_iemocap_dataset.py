@@ -140,13 +140,13 @@ class CustomIEMOCAPDataset(Dataset):
         print(f"   - Emotions: {list(self.EMOTION_DICT.values())}")
         return samples
     
-    def _split_dataset(self, session_train=['1','2','3'], session_val=['4'], session_test=['5']):
+    def _split_dataset(self, session_train=['1','2','3'], session_validation=['4'], session_test=['5']):
         """Split dataset into train and test sets."""
         if len(self.samples) == 0:
             raise ValueError("No samples found in dataset!")
         
         # Calcola statistiche del dataset
-        stats = self.dataset_stat(session_train, session_val, session_test)
+        stats = self.dataset_stat(session_train, session_validation, session_test)
         
         # Stampa statistiche
         print(f"📊 Totale campioni: {stats['total_samples']}")
@@ -164,24 +164,24 @@ class CustomIEMOCAPDataset(Dataset):
         
         # Filtra i samples in base alle sessioni
         train_samples = stats['samples_by_split']['train']
-        val_samples = stats['samples_by_split']['validation']
+        validation_samples = stats['samples_by_split']['validation']
         test_samples = stats['samples_by_split']['test']
 
         if self.split == 'train':
             self.samples = train_samples
-        elif self.split == 'val':
-            self.samples = val_samples
+        elif self.split == 'validation':
+            self.samples = validation_samples
         else:
             self.samples = test_samples
     
     
-    def dataset_stat(self, session_train, session_val, session_test):
+    def dataset_stat(self, session_train, session_validation, session_test):
         """
         Calcola tutte le statistiche del dataset per i 3 range di divisione per sessione.
         
         Args:
             session_train (list): Lista degli ID di sessione per training
-            session_val (list): Lista degli ID di sessione per validation
+            session_validation (list): Lista degli ID di sessione per validation
             session_test (list): Lista degli ID di sessione per test
         
         Returns:
@@ -194,7 +194,7 @@ class CustomIEMOCAPDataset(Dataset):
         
         # Filtra i samples per ogni split
         train_samples_list = [s for s in self.samples if s['session_id'] in session_train]
-        val_samples_list = [s for s in self.samples if s['session_id'] in session_val]
+        validation_samples_list = [s for s in self.samples if s['session_id'] in session_validation]
         test_samples_list = [s for s in self.samples if s['session_id'] in session_test]
         
         # Calcola speaker count e genere per ogni split
@@ -225,12 +225,12 @@ class CustomIEMOCAPDataset(Dataset):
             return total_length / count if count > 0 else 0.0
         
         train_m, train_f = get_speaker_stats(train_samples_list)
-        val_m, val_f = get_speaker_stats(val_samples_list)
+        validation_m, validation_f = get_speaker_stats(validation_samples_list)
         test_m, test_f = get_speaker_stats(test_samples_list)
         
         # Calcola lunghezze medie audio
         train_avg_length = get_audio_length_stats(train_samples_list)
-        val_avg_length = get_audio_length_stats(val_samples_list)
+        validation_avg_length = get_audio_length_stats(validation_samples_list)
         test_avg_length = get_audio_length_stats(test_samples_list)
         
         total_samples = len(self.samples)
@@ -248,13 +248,13 @@ class CustomIEMOCAPDataset(Dataset):
                 'avg_audio_length': train_avg_length
             },
             'validation': {
-                'sessions': session_val,
-                'speakers': val_m + val_f,
-                'males': val_m,
-                'females': val_f,
-                'samples': len(val_samples_list),
-                'percentage': len(val_samples_list) / total_samples * 100 if total_samples > 0 else 0,
-                'avg_audio_length': val_avg_length
+                'sessions': session_validation,
+                'speakers': validation_m + validation_f,
+                'males': validation_m,
+                'females': validation_f,
+                'samples': len(validation_samples_list),
+                'percentage': len(validation_samples_list) / total_samples * 100 if total_samples > 0 else 0,
+                'avg_audio_length': validation_avg_length
             },
             'test': {
                 'sessions': session_test,
@@ -267,7 +267,7 @@ class CustomIEMOCAPDataset(Dataset):
             },
             'samples_by_split': {
                 'train': train_samples_list,
-                'validation': val_samples_list,
+                'validation': validation_samples_list,
                 'test': test_samples_list
             }
         }
