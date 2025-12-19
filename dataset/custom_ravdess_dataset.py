@@ -231,6 +231,7 @@ class CustomRAVDESSDataset(Dataset):
             
             total_length = 0.0
             count = 0
+            errors = 0
             for sample in samples_list:
                 try:
                     waveform, sr = torchaudio.load(sample['path'])
@@ -238,8 +239,13 @@ class CustomRAVDESSDataset(Dataset):
                     length = waveform.shape[1] / sr
                     total_length += length
                     count += 1
-                except:
+                except Exception as e:
+                    errors += 1
+                    print(f"⚠️  Errore nel caricamento di {sample['path']}: {e}")
                     continue
+            
+            if errors > 0:
+                print(f"⚠️  {errors}/{len(samples_list)} file non caricati correttamente")
             
             return total_length / count if count > 0 else 0.0
         
