@@ -1,3 +1,10 @@
 kaggle
 kagglehub
 scikit-learn
+torch
+torchaudio
+torchvision
+librosa
+numpy
+Pillow
+PyYAML
