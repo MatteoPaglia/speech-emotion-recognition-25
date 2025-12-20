@@ -226,6 +226,8 @@ class CustomRAVDESSDataset(Dataset):
         
         def get_audio_length_stats(samples_list):
             """Calcola la lunghezza media dei file audio."""
+            import librosa
+            
             if not samples_list:
                 return 0.0
             
@@ -234,9 +236,9 @@ class CustomRAVDESSDataset(Dataset):
             errors = 0
             for sample in samples_list:
                 try:
-                    waveform, sr = torchaudio.load(sample['path'])
+                    audio, sr = librosa.load(str(sample['path']), sr=None)
                     # Lunghezza in secondi
-                    length = waveform.shape[1] / sr
+                    length = len(audio) / sr
                     total_length += length
                     count += 1
                 except Exception as e:
