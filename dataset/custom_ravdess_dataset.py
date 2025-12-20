@@ -179,27 +179,24 @@ class CustomRAVDESSDataset(Dataset):
         # Calcola statistiche del dataset
         stats = self.dataset_stat(train_actors, validation_actors, test_actors)
         
-        # Stampa statistiche
-        print(f"📊 Totale campioni: {stats['total_samples']}")
-        print(f"📊 Totale attori disponibili: {len(stats['available_actors'])}")
-        
-        print(f"\n🔀 Split fisso predefinito:")
-        print(f"   Train:      Actors 01-20 ({stats['train']['males']}M+{stats['train']['females']}F) → {stats['train']['samples']} campioni ({stats['train']['percentage']:.1f}%) | Lunghezza media: {stats['train']['avg_audio_length']:.2f}s")
-        print(f"   Validation: Actors 21-22 ({stats['validation']['males']}M+{stats['validation']['females']}F) → {stats['validation']['samples']} campioni ({stats['validation']['percentage']:.1f}%) | Lunghezza media: {stats['validation']['avg_audio_length']:.2f}s")
-        print(f"   Test:       Actors 23-24 ({stats['test']['males']}M+{stats['test']['females']}F) → {stats['test']['samples']} campioni ({stats['test']['percentage']:.1f}%) | Lunghezza media: {stats['test']['avg_audio_length']:.2f}s")
-        
-        print(f"\n👥 Attori assegnati:")
-        print(f"   Train:      {sorted(stats['train']['actors'])}")
-        print(f"   Validation: {sorted(stats['validation']['actors'])}")
-        print(f"   Test:       {sorted(stats['test']['actors'])}")
-        
+        print(f"📊 Statistiche del dataset RAVDESS:")
         # Filtra i samples in base agli attori
         if self.split == 'train':
             self.samples = stats['samples_by_split']['train']
+            print(f"   Train:      Actors 01-20 ({stats['train']['males']}M+{stats['train']['females']}F) → {stats['train']['samples']} campioni ({stats['train']['percentage']:.1f}%) | Lunghezza media: {stats['train']['avg_audio_length']:.2f}s")
+            print(f"\n👥 Attori assegnati:")
+            print(f"   Train:      {sorted(stats['train']['actors'])}")
         elif self.split == 'validation':
             self.samples = stats['samples_by_split']['validation']
+            print(f"   Validation: Actors 21-22 ({stats['validation']['males']}M+{stats['validation']['females']}F) → {stats['validation']['samples']} campioni ({stats['validation']['percentage']:.1f}%) | Lunghezza media: {stats['validation']['avg_audio_length']:.2f}s")
+            print(f"\n👥 Attori assegnati:")
+            print(f"   Validation: {sorted(stats['validation']['actors'])}")
         elif self.split == 'test':
             self.samples = stats['samples_by_split']['test']
+            print(f"   Test:       Actors 23-24 ({stats['test']['males']}M+{stats['test']['females']}F) → {stats['test']['samples']} campioni ({stats['test']['percentage']:.1f}%) | Lunghezza media: {stats['test']['avg_audio_length']:.2f}s")
+            print(f"\n👥 Attori assegnati:")
+            print(f"   Test:       {sorted(stats['test']['actors'])}")
+            
         else:
             raise ValueError(f"Split non valido: {self.split}. Usa 'train', 'validation' o 'test'.")
     

@@ -148,31 +148,29 @@ class CustomIEMOCAPDataset(Dataset):
         # Calcola statistiche del dataset
         stats = self.dataset_stat(session_train, session_validation, session_test)
         
-        # Stampa statistiche
-        print(f"📊 Totale campioni: {stats['total_samples']}")
-        print(f"📊 Sessioni disponibili: {sorted(stats['available_sessions'])}")
-        
-        print(f"\n🔀 Split per sessioni:")
-        print(f"   Train:      Sessions {stats['train']['sessions']} ({stats['train']['speakers']} speakers) → {stats['train']['samples']} campioni ({stats['train']['percentage']:.1f}%) | Lunghezza media: {stats['train']['avg_audio_length']:.2f}s")
-        print(f"   Validation: Sessions {stats['validation']['sessions']} ({stats['validation']['speakers']} speakers) → {stats['validation']['samples']} campioni ({stats['validation']['percentage']:.1f}%) | Lunghezza media: {stats['validation']['avg_audio_length']:.2f}s")
-        print(f"   Test:       Sessions {stats['test']['sessions']} ({stats['test']['speakers']} speakers) → {stats['test']['samples']} campioni ({stats['test']['percentage']:.1f}%) | Lunghezza media: {stats['test']['avg_audio_length']:.2f}s")
-        
-        print(f"\n👤 Speaker distribution:")
-        print(f"   Train:      M={stats['train']['males']}, F={stats['train']['females']}")
-        print(f"   Validation: M={stats['validation']['males']}, F={stats['validation']['females']}")
-        print(f"   Test:       M={stats['test']['males']}, F={stats['test']['females']}")
-        
         # Filtra i samples in base alle sessioni
         train_samples = stats['samples_by_split']['train']
         validation_samples = stats['samples_by_split']['validation']
         test_samples = stats['samples_by_split']['test']
 
+        print(f"📊 Statistiche del dataset IEMOCAP:")
         if self.split == 'train':
             self.samples = train_samples
+            print(f"   Train:      Sessions {stats['train']['sessions']} ({stats['train']['speakers']} speakers) → {stats['train']['samples']} campioni ({stats['train']['percentage']:.1f}%) | Lunghezza media: {stats['train']['avg_audio_length']:.2f}s")
+            print(f"\n👤 Speaker distribution:")
+            print(f"   Train:      M={stats['train']['males']}, F={stats['train']['females']}")
+
         elif self.split == 'validation':
             self.samples = validation_samples
+            print(f"   Validation: Sessions {stats['validation']['sessions']} ({stats['validation']['speakers']} speakers) → {stats['validation']['samples']} campioni ({stats['validation']['percentage']:.1f}%) | Lunghezza media: {stats['validation']['avg_audio_length']:.2f}s")
+            print(f"\n👤 Speaker distribution:")
+            print(f"   Validation: M={stats['validation']['males']}, F={stats['validation']['females']}")
+
         else:
             self.samples = test_samples
+            print(f"   Test:       Sessions {stats['test']['sessions']} ({stats['test']['speakers']} speakers) → {stats['test']['samples']} campioni ({stats['test']['percentage']:.1f}%) | Lunghezza media: {stats['test']['avg_audio_length']:.2f}s")
+            print(f"\n👤 Speaker distribution:")
+            print(f"   Test:       M={stats['test']['males']}, F={stats['test']['females']}")
     
     
     def dataset_stat(self, session_train, session_validation, session_test):
