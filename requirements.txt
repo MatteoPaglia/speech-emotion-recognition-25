@@ -1,4 +1,5 @@
 kaggle
 kagglehub
 scikit-learn
+torch
 torchcodec
