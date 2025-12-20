@@ -114,20 +114,22 @@ if __name__ == "__main__":
         # Download RAVDESS
         ravdess_ok = download_ravdess()
         # Download IEMOCAP
-        iemocap_ok = download_iemocap()
+        # iemocap_ok = download_iemocap()
         
         # Riepilogo finale
         print("\n" + "="*60)
         print("RIEPILOGO DOWNLOAD")
         print("="*60)
         print(f"RAVDESS: {'✅ Successo' if ravdess_ok else '❌ Fallito'}")
-        print(f"IEMOCAP: {'✅ Successo' if iemocap_ok else '❌ Fallito'}")
+        #print(f"IEMOCAP: {'✅ Successo' if iemocap_ok else '❌ Fallito'}")
         print("="*60)
+
         
-        if ravdess_ok and iemocap_ok:
+        if ravdess_ok:  # and iemocap_ok:
             print("\n🎉 Tutti i dataset sono stati scaricati con successo!")
         else:
             print("\n⚠️  Alcuni download sono falliti. Controlla i messaggi sopra.")
+        
     else:
         print("\n❌ Impossibile procedere ai download: setup Kaggle fallito.")
         print("Assicurati che il file 'kaggle.json' sia nella cartella corretta.")
