@@ -11,8 +11,8 @@ def print_dataset_stats(dataset, name="DATASET"):
         print("⚠️ Dataset vuoto!")
         return
 
-    # Estrazione dati
-    actors = set(s['metadata']['actor'] for s in dataset.samples)
+    # Estrazione dati (accesso diretto ai samples interni, non tramite __getitem__)
+    actors = set(int(s['metadata']['actor']) for s in dataset.samples)
     emotions = [s['metadata']['emotion_label'] for s in dataset.samples]
     
     # Statistiche Attori
@@ -32,4 +32,3 @@ def print_dataset_stats(dataset, name="DATASET"):
         bar = "█" * int(perc / 5)
         print(f"   - {emo.capitalize():10s}: {count:4d} ({perc:5.1f}%) {bar}")
     print("-" * 40)
-
