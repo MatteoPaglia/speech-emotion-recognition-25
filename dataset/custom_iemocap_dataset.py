@@ -1,107 +1,100 @@
-"""
-Custom Dataset for IEMOCAP 
-
-This module implements a PyTorch Dataset class for loading IEMOCAP dataset samples
-including only the necessary data for emotion recognition tasks:
-- Audio features (e.g., MFCCs, spectrograms)    
-- Emotion labels
-- Speaker IDs
-- Session IDs
-It supports train/test splitting, data caching, and efficient data loading.
-For this task only improvised audio samples are considered.
-
-"""
-
-import os
-import yaml
 import torch
-import numpy as np
-from PIL import Image
-from pathlib import Path
+import torchaudio
 from torch.utils.data import Dataset
-import torchvision.transforms as transforms
-
-#once the requirements are installed in colab it should work
-from sklearn.model_selection import train_test_split # type: ignore
-
+from pathlib import Path
 
 class CustomIEMOCAPDataset(Dataset):
     
-    def __init__(self, dataset_root, split='train', train_ratio=0.8, seed=42, transform=None):
-        
+    # Mapping aggiornato secondo 
+    EMOTION_DICT = {
+        'neu': 'neutral',
+        'hap': 'happy',
+        'exc': 'happy',  # <--- MERGE RICHIESTO DAL DOCUMENTO
+        'sad': 'sad',
+        'ang': 'angry'
+    }
+    
+    EMOTION_ID_MAP = {
+        'neu': 0,
+        'hap': 1,
+        'exc': 1,        # <--- Anche qui mappiamo a 1 (Happiness)
+        'sad': 2,
+        'ang': 3
+    }
+
+    def __init__(self, dataset_root, split='train', target_length=3.0):
         self.dataset_root = Path(dataset_root)
         self.split = split
-        self.train_ratio = train_ratio
-        self.seed = seed
-        
-        #fare un file di config per gli hyperparameters?
+        self.sample_rate = 16000
+        self.target_samples = int(target_length * self.sample_rate) # 48000 samples (3s)
 
-        # Define audio transformations
-        if transform is None:
-            self.transform = transforms.Compose([
-                transforms.ToTensor(),
-            ])
-        else:
-            self.transform = transform
-        
-        
-        # Collect all samples (folder_id, sample_id)
+        # Configurazione MelSpectrogram come da PDF 
+        # Spostiamo le trasformazioni qui per efficienza e correttezza
+        self.mel_transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=self.sample_rate,
+            n_fft=2048,
+            hop_length=512,
+            n_mels=128  # Valore standard, puoi variarlo
+        )
+        self.db_transform = torchaudio.transforms.AmplitudeToDB()
+
         self.samples = self._collect_samples()
-        
-        # Split into train/test
         self._split_dataset()
         
-        # Preload metadata (gt.yml and info.yml files)
-        self._preload_metadata()
-     
-        
         print(f"✅ Dataset initialized: {len(self.samples)} {split} samples")
-    
-    def _collect_samples(self):
-        """Collect all available samples from the dataset."""
-        samples = []
-        data_dir =  "directory of dataset"
-        
-        if not data_dir.exists():
-            raise FileNotFoundError(f"Data directory not found: {data_dir}")
-        
-        # Iterate through all object folders (01, 02, etc.)
-        #for folder in sorted(data_dir.iterdir()):
-            #if folder.is_dir():
-                
-                
-                
-        
-        return samples
-    
-    def _split_dataset(self):
-        """Split dataset into train and test sets."""
-        if len(self.samples) == 0:
-            raise ValueError("No samples found in dataset!")
-        
-        # Stratified split by folder_id to ensure all objects in both splits
-        folder_ids = [s[0] for s in self.samples]
-        
-        train_samples, test_samples = train_test_split(
-            self.samples,
-            train_size=self.train_ratio,
-            random_state=self.seed,
-            stratify=folder_ids
-        )
-        
-        if self.split == 'train':
-            self.samples = train_samples
-        else:
-            self.samples = test_samples
-    
-    
-    
-    def __len__(self):
-        """Return the total number of samples in the selected split."""
-        return len(self.samples)
-    
-    def __getitem__(self, idx):
-        """Retrieve a single sample by index."""
-       
-        return None
 
+    # ... [Il tuo metodo _collect_samples originale era corretto, mantienilo] ...
+    # Ricorda solo di aggiornare la logica di filtro per includere anche 'exc'
+    # nella parte: if emotion_label not in self.EMOTION_DICT: ...
+
+    def _process_waveform(self, waveform):
+        """Taglia o fa padding per avere esattamente 3 secondi (Fixed-length windows )"""
+        c, n = waveform.shape
+        if n > self.target_samples:
+            # Taglio (prendo il centro o l'inizio)
+            start = 0
+            waveform = waveform[:, start:start+self.target_samples]
+        elif n < self.target_samples:
+            # Padding (ripeto o aggiungo zeri)
+            padding = self.target_samples - n
+            waveform = torch.nn.functional.pad(waveform, (0, padding))
+        return waveform
+
+    def __getitem__(self, idx):
+        sample_info = self.samples[idx]
+        audio_path = sample_info['audio_path']
+        label_code = sample_info['label'] # es. 'exc' o 'hap'
+
+        # 1. Caricamento Waveform con Torchaudio (più veloce per PyTorch)
+        waveform, sr = torchaudio.load(str(audio_path))
+        
+        # Resampling se necessario (IEMOCAP è solitamente 16k, ma per sicurezza)
+        if sr != self.sample_rate:
+            resampler = torchaudio.transforms.Resample(sr, self.sample_rate)
+            waveform = resampler(waveform)
+
+        # 2. Lunghezza Fissa (Cruciale per i Batch)
+        waveform = self._process_waveform(waveform)
+
+        # 3. Augmentation Waveform (Qui andrebbe il rumore per la Fase 2)
+        # if self.split == 'train' and self.augment: ...
+
+        # 4. Calcolo Log-Mel Spectrogram
+        mel_spec = self.mel_transform(waveform)
+        log_mel_spec = self.db_transform(mel_spec)
+
+        # 5. Normalizzazione (Z-score richiesta da [cite: 64])
+        # Normalizzazione semplice per-sample
+        mean = log_mel_spec.mean()
+        std = log_mel_spec.std()
+        log_mel_spec = (log_mel_spec - mean) / (std + 1e-6)
+
+        # Recupero ID numerico corretto (gestisce 'exc' -> 1)
+        label_id = self.EMOTION_ID_MAP[label_code]
+
+        return {
+            'audio_features': log_mel_spec, # Tensore [1, 128, T]
+            'emotion_id': label_id,         # Tensore scalare o int
+            'label_code': label_code,       # Per debug ('exc', 'hap', etc.)
+            'sample_id': sample_info['sample_id']
+        }
