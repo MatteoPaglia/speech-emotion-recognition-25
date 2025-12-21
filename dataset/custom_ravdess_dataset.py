@@ -13,14 +13,12 @@ For this task only acted audio samples are considered.
 """
 
 import os
-import yaml
 import torch
 import torchaudio
+import librosa
 import numpy as np
-from PIL import Image
 from pathlib import Path
 from torch.utils.data import Dataset
-import torchvision.transforms as transforms
 
 
 class CustomRAVDESSDataset(Dataset):
@@ -28,21 +26,30 @@ class CustomRAVDESSDataset(Dataset):
     # Mapping SOLO delle 4 emozioni che ci interessano
     EMOTION_DICT = {
         '01': 'neutral',   # Neutral
+        '02': 'neutral',   # Calm -> Viene mappato a Neutral
         '03': 'happy',     # Happiness
         '04': 'sad',       # Sadness
         '05': 'angry'      # Anger
+    }
+
+    EMOTION_ID_MAP = {
+        'neutral': 0,
+        'happy': 1,
+        'sad': 2,
+        'angry': 3
     }
     
     # Filtri per RAVDESS
     MODALITY_AUDIO_ONLY = '03'  # Solo audio (no video)
     VOCAL_CHANNEL_SPEECH = '01'  # Solo speech (no song)
     
-    def __init__(self, dataset_root, split='train', transform=None):
+    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=2048, target_hop_length=512, target_n_mels=128, use_silence_trimming=True):
         """
         Args:
             dataset_root (str): Path to the RAVDESS dataset root folder
             split (str): 'train', 'validation', or 'test'
             transform (callable, optional): Optional transform to be applied on audio waveform
+            use_silence_trimming (bool): Se True, applica silence trimming ai dati
             
         Split fisso:
             - Train: Actors 01-20 (10M + 10F)
@@ -52,17 +59,33 @@ class CustomRAVDESSDataset(Dataset):
         self.dataset_root = Path(dataset_root)
         self.split = split
         self.transform = transform
+        self.use_silence_trimming = use_silence_trimming
 
-        self.target_sample_rate = 16000
+        #hyperparameters per l'estrazione delle feature
+        self.target_sample_rate = target_sample_rate
+        self.n_fft = target_n_fft
+        self.hop_length = target_hop_length
+        self.n_mels = target_n_mels
+
+        # Default target_samples 
+        self.target_samples = int(target_length * self.target_sample_rate) # 48000
         
-        # Collect all samples (folder_id, sample_id)
+        # Flag e variabile per la media durata POST-TRIMMING (calcolata lazy al primo uso)
+        self.mean_trimmed_samples_computed = False
+        self.mean_trimmed_samples = None
+        
+        # Trasformazione MelSpectrogram (Identica a IEMOCAP per coerenza)
+        self.mel_transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=self.target_sample_rate,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            n_mels=self.n_mels
+        )
+        self.db_transform = torchaudio.transforms.AmplitudeToDB()
+        
         self.samples = self._collect_samples()
-        
-        # Split into train/test
         self._split_dataset()
-        
-        print(f"✅ Dataset initialized: {len(self.samples)} {split} samples")
-
+       
 
 
     def _parse_filename(self, filename):
@@ -92,8 +115,7 @@ class CustomRAVDESSDataset(Dataset):
             'repetition': parts[5],         # 01 o 02
             'actor': parts[6]               # 01-24
         }
-    
-    
+       
     def _collect_samples(self):
         """
         Collect all available samples from the dataset.
@@ -145,15 +167,9 @@ class CustomRAVDESSDataset(Dataset):
                 'metadata': metadata
             })
         
-        print(f"✅ Dopo i filtri: {len(samples)} samples validi")
-        print(f"   - Audio-only (modality 03)")
-        print(f"   - Speech-only (vocal_channel 01)")
-        print(f"   - Emotions: {list(self.EMOTION_DICT.values())}")
-        
+      
         return samples
-    
-
-    
+       
     def _split_dataset(self):
         """
         Split dataset into train/validation/test sets con split fisso basato su ID attori.
@@ -200,7 +216,6 @@ class CustomRAVDESSDataset(Dataset):
         else:
             raise ValueError(f"Split non valido: {self.split}. Usa 'train', 'validation' o 'test'.")
     
-    
     def dataset_stat(self, train_actors, validation_actors, test_actors):
         """
         Calcola tutte le statistiche del dataset per i 3 range di divisione.
@@ -213,8 +228,6 @@ class CustomRAVDESSDataset(Dataset):
         Returns:
             dict: Dizionario con tutte le statistiche calcolate
         """
-        import torchaudio
-        
         def get_gender_stats(actors_set):
             """Calcola statistiche di genere per un set di attori."""
             males = [a for a in actors_set if a % 2 == 1]
@@ -223,8 +236,6 @@ class CustomRAVDESSDataset(Dataset):
         
         def get_audio_length_stats(samples_list):
             """Calcola la lunghezza media dei file audio."""
-            import librosa
-            
             if not samples_list:
                 return 0.0
             
@@ -309,62 +320,128 @@ class CustomRAVDESSDataset(Dataset):
     
     
     
-    def __len__(self):
-        """Return the total number of samples in the selected split."""
-        return len(self.samples)
-    
-    def __getitem__(self, idx):
+
+    def _process_waveform(self, waveform):
         """
-        Retrieve a single sample by index.
+        Processa la waveform completa:
+        FASE 1: Trim silenzio dalle estremità (calcolo media pst-trimming se necessario)
+        FASE 2: Center crop o padding alla durata media POST-TRIMMING
+        
+        Args:
+            waveform (torch.Tensor): Tensore audio [1, num_samples]
         
         Returns:
-            dict with keys:
-                - 'audio': Audio waveform tensor [1, num_samples]
-                - 'sample_rate': Sample rate of the audio
-                - 'emotion': Emotion label (string)
-                - 'emotion_id': Emotion ID (int, 0-indexed)
-                - 'actor': Actor ID (int)
-                - 'path': Path to the audio file
-                - 'metadata': Full metadata dict
+            torch.Tensor: Waveform processata [1, mean_trimmed_samples]
         """
-        # Get sample info
-        sample = self.samples[idx]
-        audio_path = sample['path']
-        metadata = sample['metadata']
+        # FASE 1: TRIM SILENZIO
+        if self.use_silence_trimming:
+            try:
+                waveform_np = waveform.numpy()[0]
+                trimmed, _ = librosa.effects.trim(waveform_np, top_db=40, ref=np.max)
+                waveform = torch.from_numpy(trimmed).unsqueeze(0).float()
+            except Exception as e:
+                print(f"⚠️  Errore nel trim_silence: {e}")
         
-        # Load audio file using torchaudio
-        waveform, sample_rate = torchaudio.load(audio_path)
+        # CALCOLA MEDIA POST-TRIMMING (una sola volta, lazy)
+        if not self.mean_trimmed_samples_computed:
+            print(f"\n📊 Calcolando media durata POST-TRIMMING per split '{self.split}'...")
+            total_samples = 0
+            count = 0
+            
+            for idx, sample in enumerate(self.samples):
+                try:
+                    wf, sr = torchaudio.load(str(sample['path']))
+                    
+                    if sr != self.target_sample_rate:
+                        resampler = torchaudio.transforms.Resample(sr, self.target_sample_rate)
+                        wf = resampler(wf)
+                    
+                    if wf.shape[0] > 1:
+                        wf = torch.mean(wf, dim=0, keepdim=True)
+                    
+                    # TRIM SILENZIO
+                    if self.use_silence_trimming:
+                        wf_np = wf.numpy()[0]
+                        trimmed_wf, _ = librosa.effects.trim(wf_np, top_db=40, ref=np.max)
+                        wf = torch.from_numpy(trimmed_wf).unsqueeze(0).float()
+                    
+                    total_samples += wf.shape[1]
+                    count += 1
+                    
+                    if (idx + 1) % max(1, len(self.samples) // 5) == 0:
+                        print(f"   {idx + 1}/{len(self.samples)} file processati...")
+                except Exception:
+                    continue
+            
+            if count > 0:
+                self.mean_trimmed_samples = total_samples // count
+                avg_seconds = self.mean_trimmed_samples / self.target_sample_rate
+                print(f"✅ Media calcolata: {avg_seconds:.2f}s ({self.mean_trimmed_samples} campioni)\n")
+            else:
+                self.mean_trimmed_samples = int(3.0 * self.target_sample_rate)
+                print(f"❌ Calcolo fallito, usando default 3.0s\n")
+            
+            self.mean_trimmed_samples_computed = True
         
-        # Resample if necessary
+        # FASE 2: CENTER CROP o PADDING basato sulla media
+        c, n = waveform.shape
+        target_len = self.mean_trimmed_samples
+        
+        if n > target_len:
+            # Audio troppo lungo: CENTER CROP (prendi la parte centrale)
+            start = (n - target_len) // 2
+            waveform = waveform[:, start:start+target_len]
+                
+        elif n < target_len:
+            # Audio troppo corto: PADDING
+            padding = target_len - n
+            waveform = torch.nn.functional.pad(waveform, (0, padding))
+            
+        return waveform
+    
+    def __getitem__(self, idx):
+        sample_info = self.samples[idx]
+        audio_path = sample_info['path']
+        metadata = sample_info['metadata']
+        
+        # 1. Load Audio
+        waveform, sample_rate = torchaudio.load(str(audio_path))
+        
+        # Resample
         if sample_rate != self.target_sample_rate:
-            resampler = torchaudio.transforms.Resample(
-                orig_freq=sample_rate,
-                new_freq=self.target_sample_rate
-            )
+            resampler = torchaudio.transforms.Resample(sample_rate, self.target_sample_rate)
             waveform = resampler(waveform)
-            sample_rate = self.target_sample_rate
-        
-        # Convert to mono if stereo (average channels)
+            
+        # Mono check
         if waveform.shape[0] > 1:
             waveform = torch.mean(waveform, dim=0, keepdim=True)
         
-        # Apply custom transform if provided
-        if self.transform is not None:
-            waveform = self.transform(waveform)
+        # 2. Process Waveform (trim silenzio + center crop/padding)
+        waveform = self._process_waveform(waveform)
         
-        # Map emotion code to 0-indexed ID
-        # '01' -> 0, '03' -> 1, '04' -> 2, '05' -> 3
-        emotion_code = metadata['emotion']
-        emotion_mapping = {'01': 0, '03': 1, '04': 2, '05': 3}
-        emotion_id = emotion_mapping[emotion_code]
+        # 3. Augmentation Waveform (Opzionale per Phase 2)
+        # if self.split == 'train' ...
         
+        # 5. Mel Spectrogram
+        mel_spec = self.mel_transform(waveform)
+        log_mel_spec = self.db_transform(mel_spec)
+        
+        # 5. Normalization (Z-score)
+        mean = log_mel_spec.mean()
+        std = log_mel_spec.std()
+        log_mel_spec = (log_mel_spec - mean) / (std + 1e-6)
+        # Labels
+        label_str = metadata['emotion_label']     # 'neutral', 'happy'...
+        label_id = self.EMOTION_ID_MAP[label_str] # 0, 1, 2, 3
         return {
-            'audio': waveform,                      # [1, num_samples]
-            'sample_rate': sample_rate,             # int
-            'emotion': metadata['emotion_label'],    # string: 'neutral', 'happy', 'sad', 'angry'
-            'emotion_id': emotion_id,               # int: 0, 1, 2, 3
-            'actor': int(metadata['actor']),        # int: 1-24
-            'intensity': int(metadata['intensity']), # int: 1 or 2
-            'path': str(audio_path),                # string path
-            'metadata': metadata                     # full metadata dict
+            'audio_features': log_mel_spec, # Tensor [1, 128, T]
+            'emotion_id': label_id,         # Int
+            'emotion': label_str,           # Str (utile per debug)
+            'actor_id': metadata['actor']
         }
+
+
+
+    def __len__(self):
+        """Return the total number of samples in the selected split."""
+        return len(self.samples)

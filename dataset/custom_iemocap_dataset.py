@@ -15,14 +15,12 @@ mi serve tutta la cartella perchè ha tralasciato cartelle importanti ?
 """
 
 import os
-import yaml
 import torch
+import torchaudio
+import librosa
 import numpy as np
-from PIL import Image
 from pathlib import Path
 from torch.utils.data import Dataset
-import torchvision.transforms as transforms
-import librosa
 
 
 class CustomIEMOCAPDataset(Dataset):
@@ -43,24 +41,45 @@ class CustomIEMOCAPDataset(Dataset):
         'ang': 3    # angry
     }
     
-    def __init__(self, dataset_root, split='train', transform=None):
-        
+    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=2048, target_hop_length=512, target_n_mels=128, use_silence_trimming=True):
+        """
+        Args:
+            dataset_root (str): Path to IEMOCAP dataset root folder
+            split (str): 'train', 'validation', or 'test'
+            transform (callable, optional): Optional transform (non usato, qui per compatibilità)
+            target_length (float): Lunghezza target in secondi
+            target_sample_rate (int): Sample rate (16000 Hz)
+            target_n_fft (int): FFT size (2048)
+            target_hop_length (int): Hop length (512)
+            target_n_mels (int): Numero di mel bins (128)
+            use_silence_trimming (bool): Se applicare silence trimming
+        """
         self.dataset_root = Path(dataset_root)
         self.split = split
+        self.transform = transform
+        self.use_silence_trimming = use_silence_trimming
         
-        # Audio processing parameters
-        self.sample_rate = 16000  # 16 kHz
-        self.n_fft = 2048         # FFT size
-        self.hop_length = 512     # Hop length for STFT
-        self.use_mfcc = False     # Set to True to use MFCC instead of log spectrogram
-
-        # Define audio transformations
-        if transform is None:
-            self.transform = transforms.Compose([
-                transforms.ToTensor(),
-            ])
-        else:
-            self.transform = transform
+        # Audio processing parameters (identici a RAVDESS)
+        self.target_sample_rate = target_sample_rate
+        self.n_fft = target_n_fft
+        self.hop_length = target_hop_length
+        self.n_mels = target_n_mels
+        
+        # Default target_samples
+        self.target_samples = int(target_length * self.target_sample_rate)  # 48000
+        
+        # Flag e variabile per la media durata POST-TRIMMING (calcolata lazy al primo uso)
+        self.mean_trimmed_samples_computed = False
+        self.mean_trimmed_samples = None
+        
+        # Trasformazione MelSpectrogram (identica a RAVDESS per coerenza)
+        self.mel_transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=self.target_sample_rate,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            n_mels=self.n_mels
+        )
+        self.db_transform = torchaudio.transforms.AmplitudeToDB()
         
         
         # Collect all samples (folder_id, sample_id)
@@ -212,7 +231,7 @@ class CustomIEMOCAPDataset(Dataset):
             count = 0
             for sample in samples_list:
                 try:
-                    audio, sr = librosa.load(str(sample['audio_path']), sr=self.sample_rate)
+                    audio, sr = librosa.load(str(sample['audio_path']), sr=self.target_sample_rate)
                     # Lunghezza in secondi
                     length = len(audio) / sr
                     total_length += length
@@ -276,38 +295,84 @@ class CustomIEMOCAPDataset(Dataset):
         """Return the total number of samples in the selected split."""
         return len(self.samples)
     
-    def _load_audio_features(self, audio_path):
-        """Load audio and compute log spectrogram or MFCC."""
-        try:
-            # Load audio at 16kHz
-            audio, sr = librosa.load(str(audio_path), sr=self.sample_rate)
-            
-            if self.use_mfcc:
-                # Compute MFCC coefficients
-                mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_fft=self.n_fft, 
-                                           hop_length=self.hop_length, n_mfcc=13)
-                # Convert to torch tensor (13, time_frames)
-                features = torch.FloatTensor(mfcc)
-            else:
-                # Compute STFT (Short-Time Fourier Transform)
-                stft = librosa.stft(audio, n_fft=self.n_fft, hop_length=self.hop_length)
-                
-                # Get magnitude spectrogram
-                magnitude = np.abs(stft)
-                
-                # Convert to dB scale (log spectrogram)
-                log_spectrogram = librosa.power_to_db(magnitude ** 2, ref=np.max)
-                
-                # Convert to torch tensor and add channel dimension (1, freq_bins, time_frames)
-                features = torch.FloatTensor(log_spectrogram).unsqueeze(0)
-            
-            return features
+    def _process_waveform(self, waveform):
+        """
+        Processa la waveform completa:
+        FASE 1: Trim silenzio dalle estremità (calcolo media pst-trimming se necessario)
+        FASE 2: Center crop o padding alla durata media POST-TRIMMING
         
-        except Exception as e:
-            print(f"Error loading audio from {audio_path}: {e}")
-            raise
-    
-    
+        Args:
+            waveform (torch.Tensor): Tensore audio [1, num_samples]
+        
+        Returns:
+            torch.Tensor: Waveform processata [1, mean_trimmed_samples]
+        """
+        # FASE 1: TRIM SILENZIO
+        if self.use_silence_trimming:
+            try:
+                waveform_np = waveform.numpy()[0]
+                trimmed, _ = librosa.effects.trim(waveform_np, top_db=40, ref=np.max)
+                waveform = torch.from_numpy(trimmed).unsqueeze(0).float()
+            except Exception as e:
+                print(f"⚠️  Errore nel trim_silence: {e}")
+        
+        # CALCOLA MEDIA POST-TRIMMING (una sola volta, lazy)
+        if not self.mean_trimmed_samples_computed:
+            print(f"\n📊 Calcolando media durata POST-TRIMMING per split '{self.split}'...")
+            total_samples = 0
+            count = 0
+            
+            for idx, sample in enumerate(self.samples):
+                try:
+                    wf, sr = torchaudio.load(str(sample['audio_path']))
+                    
+                    if sr != self.target_sample_rate:
+                        resampler = torchaudio.transforms.Resample(sr, self.target_sample_rate)
+                        wf = resampler(wf)
+                    
+                    if wf.shape[0] > 1:
+                        wf = torch.mean(wf, dim=0, keepdim=True)
+                    
+                    # TRIM SILENZIO
+                    if self.use_silence_trimming:
+                        wf_np = wf.numpy()[0]
+                        trimmed_wf, _ = librosa.effects.trim(wf_np, top_db=40, ref=np.max)
+                        wf = torch.from_numpy(trimmed_wf).unsqueeze(0).float()
+                    
+                    total_samples += wf.shape[1]
+                    count += 1
+                    
+                    if (idx + 1) % max(1, len(self.samples) // 5) == 0:
+                        print(f"   {idx + 1}/{len(self.samples)} file processati...")
+                except Exception:
+                    continue
+            
+            if count > 0:
+                self.mean_trimmed_samples = total_samples // count
+                avg_seconds = self.mean_trimmed_samples / self.target_sample_rate
+                print(f"✅ Media calcolata: {avg_seconds:.2f}s ({self.mean_trimmed_samples} campioni)\n")
+            else:
+                self.mean_trimmed_samples = int(3.0 * self.target_sample_rate)
+                print(f"❌ Calcolo fallito, usando default 3.0s\n")
+            
+            self.mean_trimmed_samples_computed = True
+        
+        # FASE 2: CENTER CROP o PADDING basato sulla media
+        c, n = waveform.shape
+        target_len = self.mean_trimmed_samples
+        
+        if n > target_len:
+            # Audio troppo lungo: CENTER CROP (prendi la parte centrale)
+            start = (n - target_len) // 2
+            waveform = waveform[:, start:start+target_len]
+                
+        elif n < target_len:
+            # Audio troppo corto: PADDING
+            padding = target_len - n
+            waveform = torch.nn.functional.pad(waveform, (0, padding))
+            
+        return waveform
+        
     def __getitem__(self, idx):
         """Retrieve a single sample by index."""
         if idx < 0 or idx >= len(self.samples):
@@ -317,11 +382,6 @@ class CustomIEMOCAPDataset(Dataset):
         audio_path = sample_info['audio_path']
         label = sample_info['label']
         speaker_id = sample_info['actor']
-        session_id = sample_info['session_id']
-        impro_id = sample_info['impro_id']
-        
-        # Load audio features (e.g., MFCCs, spectrograms)
-        audio_features = self._load_audio_features(audio_path)
         
         # Map emotion code to emotion label and ID
         emotion_label = self.EMOTION_DICT.get(label, None)
@@ -331,13 +391,35 @@ class CustomIEMOCAPDataset(Dataset):
         if emotion_label is None or emotion_id is None:
             raise ValueError(f"Invalid emotion label: {label}. Only {list(self.EMOTION_DICT.keys())} are supported.")
         
+        # 1. Load Audio
+        waveform, sample_rate = torchaudio.load(str(audio_path))
+        
+        # Resample
+        if sample_rate != self.target_sample_rate:
+            resampler = torchaudio.transforms.Resample(sample_rate, self.target_sample_rate)
+            waveform = resampler(waveform)
+            
+        # Mono check
+        if waveform.shape[0] > 1:
+            waveform = torch.mean(waveform, dim=0, keepdim=True)
+        
+        # 2. Process Waveform (trim silenzio + center crop/padding)
+        waveform = self._process_waveform(waveform)
+        
+        # 3. Mel Spectrogram
+        mel_spec = self.mel_transform(waveform)
+        log_mel_spec = self.db_transform(mel_spec)
+        
+        # 4. Normalization (Z-score)
+        mean = log_mel_spec.mean()
+        std = log_mel_spec.std()
+        log_mel_spec = (log_mel_spec - mean) / (std + 1e-6)
+        
+        # 5. Return with same format as RAVDESS
         return {
-            'audio_features': audio_features,
-            'emotion': emotion_label,           # string: 'neutral', 'happy', 'sad', 'angry'
-            'emotion_id': emotion_id,           # int: 0-3 (same as RAVDESS)
-            'speaker_id': speaker_id,           # string: 'M' o 'F'
-            'session_id': session_id,           # string: '1'-'5'
-            'impro_id': impro_id,               # string: es. '06'
-            'label': label                      # original label code
+            'audio_features': log_mel_spec,  # Tensor [1, 128, T]
+            'emotion_id': emotion_id,         # Int: 0-3
+            'emotion': emotion_label,         # Str: 'neutral', 'happy', 'sad', 'angry'
+            'actor_id': speaker_id            # Str: 'M' o 'F'
         }
 
