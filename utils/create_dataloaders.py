@@ -5,37 +5,21 @@ from torch.nn.utils.rnn import pad_sequence
 
 def collate_fn_unified(batch):
     """
-    Collate function unificata per RAVDESS e IEMOCAP.
-    
-    Funziona con qualsiasi dataset che ritorna:
-        - 'audio': waveform [1, num_samples]
-        - 'emotion_id': int (0-3)
-    
-    Args:
-        batch: List di dict da __getitem__
-    
-    Returns:
-        dict con audio paddati e labels
+    Collate function ottimizzata per Spettrogrammi a lunghezza FISSA.
+    Non fa padding dinamico perché i dati sono già uniformati nel Dataset (es. 3s).
     """
-    # Estrai waveforms [1, samples] -> [samples]
-    audios = [item['audio'].squeeze(0) for item in batch]
+    # 1. Stack delle features (Spettrogrammi)
+    # Poiché sono tutti della stessa dimensione (es. 3s), usiamo stack invece di pad_sequence
+    # Input: Lista di [1, n_mels, time] -> Output: [Batch, 1, n_mels, time]
+    # Nota: Assicurati che il Dataset ritorni la chiave 'audio_features'
+    audio_features = torch.stack([item['audio_features'] for item in batch])
     
-    # Estrai emotion IDs
+    # 2. Stack delle labels
     emotion_ids = torch.tensor([item['emotion_id'] for item in batch], dtype=torch.long)
     
-    # Salva lunghezze originali
-    audio_lengths = torch.tensor([audio.shape[0] for audio in audios], dtype=torch.long)
-    
-    # Padding: [batch_size, max_length]
-    audios_padded = pad_sequence(audios, batch_first=True, padding_value=0.0)
-    
-    # Aggiungi dimensione canale: [batch_size, 1, max_length]
-    audios_padded = audios_padded.unsqueeze(1)
-    
     return {
-        'audio': audios_padded,           # [batch_size, 1, max_length]
-        'emotion_id': emotion_ids,        # [batch_size]
-        'audio_lengths': audio_lengths    # [batch_size]
+        'audio_features': audio_features,  # [B, 1, 128, T] -> Pronto per la CNN
+        'emotion_id': emotion_ids          # [B]
     }
 
 def create_dataloaders(

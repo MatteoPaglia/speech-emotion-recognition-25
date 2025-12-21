@@ -31,40 +31,42 @@ class CustomRAVDESSDataset(Dataset):
     # Mapping SOLO delle 4 emozioni che ci interessano
     EMOTION_DICT = {
         '01': 'neutral',   # Neutral
+        '02': 'neutral',   # Calm -> Viene mappato a Neutral
         '03': 'happy',     # Happiness
         '04': 'sad',       # Sadness
         '05': 'angry'      # Anger
+    }
+
+    EMOTION_ID_MAP = {
+        'neutral': 0,
+        'happy': 1,
+        'sad': 2,
+        'angry': 3
     }
     
     # Filtri per RAVDESS
     MODALITY_AUDIO_ONLY = '03'  # Solo audio (no video)
     VOCAL_CHANNEL_SPEECH = '01'  # Solo speech (no song)
     
-    def __init__(self, dataset_root, split='train', transform=None, target_sample_rate=16000):
-        """
-        Args:
-            dataset_root (str): Path to the RAVDESS dataset root folder
-            split (str): 'train', 'validation', or 'test'
-            transform (callable, optional): Optional transform to be applied on audio waveform
-            target_sample_rate (int): Target sample rate for audio resampling (default: 16kHz)
-            
-        Split fisso:
-            - Train: Actors 01-20 (10M + 10F)
-            - Validation: Actors 21-22 (1M + 1F)
-            - Test: Actors 23-24 (1M + 1F)
-        """
+    def __init__(self, dataset_root, split='train', target_length=3.0):
         self.dataset_root = Path(dataset_root)
         self.split = split
-        self.transform = transform
-        self.target_sample_rate = target_sample_rate
+        self.target_sample_rate = 16000
+        self.target_samples = int(target_length * self.target_sample_rate) # 48000
         
-        # Collect all samples (folder_id, sample_id)
+        # Trasformazione MelSpectrogram (Identica a IEMOCAP per coerenza)
+        self.mel_transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=self.target_sample_rate,
+            n_fft=2048,
+            hop_length=512,
+            n_mels=128
+        )
+        self.db_transform = torchaudio.transforms.AmplitudeToDB()
+        
         self.samples = self._collect_samples()
-        
-        # Split into train/test
         self._split_dataset()
         
-        print(f"✅ Dataset initialized: {len(self.samples)} {split} samples")
+        print(f"✅ RAVDESS Initialized: {len(self.samples)} {split} samples")
 
 
 
@@ -232,59 +234,71 @@ class CustomRAVDESSDataset(Dataset):
         """Return the total number of samples in the selected split."""
         return len(self.samples)
     
-    def __getitem__(self, idx):
-        """
-        Retrieve a single sample by index.
-        
-        Returns:
-            dict with keys:
-                - 'audio': Audio waveform tensor [1, num_samples]
-                - 'sample_rate': Sample rate of the audio
-                - 'emotion': Emotion label (string)
-                - 'emotion_id': Emotion ID (int, 0-indexed)
-                - 'actor': Actor ID (int)
-                - 'path': Path to the audio file
-                - 'metadata': Full metadata dict
-        """
-        # Get sample info
-        sample = self.samples[idx]
-        audio_path = sample['path']
-        metadata = sample['metadata']
-        
-        # Load audio file using torchaudio
-        waveform, sample_rate = torchaudio.load(audio_path)
-        
-        # Resample if necessary
-        if sample_rate != self.target_sample_rate:
-            resampler = torchaudio.transforms.Resample(
-                orig_freq=sample_rate,
-                new_freq=self.target_sample_rate
-            )
-            waveform = resampler(waveform)
-            sample_rate = self.target_sample_rate
-        
-        # Convert to mono if stereo (average channels)
-        if waveform.shape[0] > 1:
-            waveform = torch.mean(waveform, dim=0, keepdim=True)
-        
-        # Apply custom transform if provided
-        if self.transform is not None:
-            waveform = self.transform(waveform)
-        
-        # Map emotion code to 0-indexed ID
-        # '01' -> 0, '03' -> 1, '04' -> 2, '05' -> 3
-        emotion_code = metadata['emotion']
-        emotion_mapping = {'01': 0, '03': 1, '04': 2, '05': 3}
-        emotion_id = emotion_mapping[emotion_code]
-        
-        return {
-            'audio': waveform,                      # [1, num_samples]
-            'sample_rate': sample_rate,             # int
-            'emotion': metadata['emotion_label'],    # string: 'neutral', 'happy', 'sad', 'angry'
-            'emotion_id': emotion_id,               # int: 0, 1, 2, 3
-            'actor': int(metadata['actor']),        # int: 1-24
-            'intensity': int(metadata['intensity']), # int: 1 or 2
-            'path': str(audio_path),                # string path
-            'metadata': metadata                     # full metadata dict
-        }
+    def _process_waveform(self, waveform):
+        # Target fisso a 3 secondi (48000 samples a 16kHz)
+        target_len = 48000 
+        c, n = waveform.shape
 
+        if n > target_len:
+            # CASO AUDIO LUNGO: Taglio intelligente
+            if self.split == 'train':
+                # Random Crop: In training non perdo nulla su più epoche
+                max_start = n - target_len
+                start = torch.randint(0, max_start, (1,)).item()
+                waveform = waveform[:, start:start+target_len]
+            else:
+                # Center Crop: In test prendo la parte centrale (più rappresentativa)
+                start = (n - target_len) // 2
+                waveform = waveform[:, start:start+target_len]
+                
+        elif n < target_len:
+            # CASO AUDIO CORTO: Padding (necessario ma minimizzato)
+            padding = target_len - n
+            waveform = torch.nn.functional.pad(waveform, (0, padding))
+            
+        return waveform
+    
+    
+
+    def __getitem__(self, idx):
+            sample_info = self.samples[idx]
+            audio_path = sample_info['path']
+            metadata = sample_info['metadata']
+            
+            # 1. Load Audio
+            waveform, sample_rate = torchaudio.load(str(audio_path))
+            
+            # Resample
+            if sample_rate != self.target_sample_rate:
+                resampler = torchaudio.transforms.Resample(sample_rate, self.target_sample_rate)
+                waveform = resampler(waveform)
+                
+            # Mono check
+            if waveform.shape[0] > 1:
+                waveform = torch.mean(waveform, dim=0, keepdim=True)
+
+            # 2. Fixed Length (3s) - CRUCIALE
+            waveform = self._process_waveform(waveform)
+
+            # 3. Augmentation Waveform (Opzionale per Phase 2)
+            # if self.split == 'train' ...
+
+            # 4. Mel Spectrogram
+            mel_spec = self.mel_transform(waveform)
+            log_mel_spec = self.db_transform(mel_spec)
+            
+            # 5. Normalization (Z-score)
+            mean = log_mel_spec.mean()
+            std = log_mel_spec.std()
+            log_mel_spec = (log_mel_spec - mean) / (std + 1e-6)
+
+            # Labels
+            label_str = metadata['emotion_label']     # 'neutral', 'happy'...
+            label_id = self.EMOTION_ID_MAP[label_str] # 0, 1, 2, 3
+
+            return {
+                'audio_features': log_mel_spec, # Tensor [1, 128, T]
+                'emotion_id': label_id,         # Int
+                'emotion': label_str,           # Str (utile per debug)
+                'actor_id': metadata['actor']
+            }
