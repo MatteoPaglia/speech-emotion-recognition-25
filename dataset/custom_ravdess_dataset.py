@@ -115,8 +115,6 @@ class CustomRAVDESSDataset(Dataset):
         # RAVDESS può avere struttura: ravdess/Actor_XX/*.wav
         audio_files = list(self.dataset_root.rglob('*.wav'))
         
-        print(f"🔍 Trovati {len(audio_files)} file audio totali nel dataset")
-        
         # 3. Itera su ogni file audio trovato
         for audio_file in audio_files:
             
