@@ -3,8 +3,10 @@ kagglehub
 scikit-learn
 torch
 torchaudio
+torchcodec
 torchvision
 librosa
 numpy
+matplotlib
 Pillow
 PyYAML
