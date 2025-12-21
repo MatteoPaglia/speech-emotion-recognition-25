@@ -72,6 +72,10 @@ class CustomIEMOCAPDataset(Dataset):
         self.mean_trimmed_samples_computed = False
         self.mean_trimmed_samples = None
         
+        # Pre-carica tutte le etichette: {sample_id: emotion_label}
+        self.label_dict = self._preload_all_labels()
+        print(f"✅ Caricate {len(self.label_dict)} etichette")
+        
         # Trasformazione MelSpectrogram (identica a RAVDESS per coerenza)
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
             sample_rate=self.target_sample_rate,
@@ -91,74 +95,89 @@ class CustomIEMOCAPDataset(Dataset):
         
         print(f"✅ Dataset initialized: {len(self.samples)} {split} samples")
     
-    def _collect_samples(self):
-        """Collect all available samples from the dataset."""
-        samples = []
+    def _preload_all_labels(self):
+        """
+        Pre-carica TUTTE le etichette da tutti i file di valutazione.
+        Crea una struttura: {sample_id: emotion_label}
+        Eseguito UNA SOLA VOLTA durante l'inizializzazione.
         
-        # Use dataset_root directly (should already point to IEMOCAP_full_release or equivalent)
+        Returns:
+            dict: {sample_id (str): emotion_label (str)}
+        """
+        label_dict = {}
         data_dir = self.dataset_root
         
-        print(f"Starting to collect samples from: {data_dir}")
-        
-        # Iterate through all object folders (Session1, Session2, etc.)
-        session_count = 0
+        # Itera su tutte le sessioni
         for folder in sorted(data_dir.iterdir()):
-            if folder.is_dir():
-                if(folder.name.startswith("Session")):
-                    session_count += 1
-                    folder_id = folder.name[-1]  # Extract folder ID (e.g., '1' from 'Session1')
-                    
-                    # Collect in sentence folder for improvised samples only
-                    sentence_folder = folder / "sentences" / "wav"
-                    
+            if folder.is_dir() and folder.name.startswith("Session"):
+                label_folder = folder / "dialog" / "EmoEvaluation"
+                
+                # Itera su tutti i file .txt di valutazione
+                if label_folder.exists():
+                    for label_file in label_folder.glob("*.txt"):
+                        try:
+                            with open(label_file, 'r') as f:
+                                for line in f:
+                                    if line.strip():
+                                        parts = line.strip().split('\t')
+                                        # Esempio: [6.2901 - 8.2357]\tSes01F_impro01_F000\tneu\t[2.5000, 2.5000, 2.5000]
+                                        if len(parts) >= 3:
+                                            sample_id = parts[1]  # es. 'Ses01F_impro01_F000'
+                                            emotion_label = parts[2]  # es. 'neu'
+                                            
+                                            # FILTRO: Solo le 4 emozioni che ci interessano
+                                            if emotion_label in self.EMOTION_DICT:
+                                                label_dict[sample_id] = emotion_label
+                        except Exception as e:
+                            print(f"      ⚠ Errore lettura {label_file}: {e}")
+        
+        return label_dict
+    
+    def _collect_samples(self):
+        """
+        Collect all available samples from the dataset.
+        NOTA: Le etichette vengono cercate nel dizionario pre-caricato (self.label_dict),
+        non lette da file durante questa funzione.
+        """
+        samples = []
+        data_dir = self.dataset_root
+        
+        print(f"🔍 Raccogliendo campioni audio...")
+        
+        # Itera su tutte le sessioni
+        for folder in sorted(data_dir.iterdir()):
+            if folder.is_dir() and folder.name.startswith("Session"):
+                folder_id = folder.name[-1]  # Estrai ID sessione (es. '1' da 'Session1')
+                
+                # Raccogli campioni da folder improvvisati
+                sentence_folder = folder / "sentences" / "wav"
+                
+                if sentence_folder.exists():
                     for folder_sample in sentence_folder.iterdir():
                         if "impro" in folder_sample.name:
-                            actor = folder_sample.name.split("_")[0][-1]  # Extract actor M or F
-                            impro_id = folder_sample.name.split("impro")[1][:2]  # Extract impro ID es. 06
+                            actor = folder_sample.name.split("_")[0][-1]  # Estrai M o F
+                            impro_id = folder_sample.name.split("impro")[1][:2]  # Estrai ID impro
                             
-                            # Load label file once per improvisation folder
-                            label_folder = folder / "dialog" / "EmoEvaluation"
-                            label_file = label_folder / f"{folder_sample.name}.txt" 
-                            
-                            # Parse the label file to create a mapping: sample_id -> emotion_label
-                            sample_labels = {}
-                            try:
-                                with open(label_file, 'r') as f:
-                                    for line in f:
-                                        if line.strip():
-                                            parts = line.strip().split('\t')
-                                            # Example: [6.2901 - 8.2357]	Ses01F_impro01_F000	neu	[2.5000, 2.5000, 2.5000]
-                                            if len(parts) >= 3:
-                                                sample_id = parts[1]
-                                                emotion_label = parts[2]
-                                                
-                                                # FILTRO: Solo le 4 emozioni che ci interessano
-                                                if emotion_label in self.EMOTION_DICT:
-                                                    sample_labels[sample_id] = emotion_label
-                            except FileNotFoundError:
-                                print(f"      ⚠ Label file not found: {label_file}")
-                                continue
-                            
-                            # Now iterate through all WAV files in this improvisation folder
+                            # Itera su tutti i file WAV in questa cartella improvvisata
                             for sample_file in sorted(folder_sample.glob("*.wav")):
-                                sample_id = sample_file.stem  # Extract sample ID without extension (e.g., 'Ses04F_impro06_F002')
-                                audio_path = sample_file  # Full path to audio file
+                                sample_id = sample_file.stem  # es. 'Ses04F_impro06_F002'
+                                audio_path = sample_file
                                 
-                                # Check if this sample has a valid emotion label
-                                if sample_id in sample_labels:
+                                # Cerca l'etichetta nel dizionario pre-caricato
+                                if sample_id in self.label_dict:
                                     sample_data = {
                                         'session_id': folder_id,
                                         'audio_path': audio_path,
                                         'sample_id': sample_id,
                                         'actor': actor,
                                         'impro_id': impro_id,
-                                        'label': sample_labels[sample_id]
+                                        'label': self.label_dict[sample_id]  # Accesso O(1) al dict
                                     }
                                     samples.append(sample_data)
         
-        print(f"✅ Collected {len(samples)} samples in total")
-        print(f"   - Improvised samples only")
-        print(f"   - Emotions: {list(self.EMOTION_DICT.values())}")
+        print(f"✅ Raccolti {len(samples)} campioni audio")
+        print(f"   - Solo campioni improvvisati")
+        print(f"   - Emozioni: {list(self.EMOTION_DICT.values())}")
         return samples
     
     def _split_dataset(self, session_train=['1','2','3'], session_validation=['4'], session_test=['5']):
