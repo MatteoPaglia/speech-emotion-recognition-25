@@ -108,51 +108,53 @@ class CustomIEMOCAPDataset(Dataset):
                     session_count += 1
                     folder_id = folder.name[-1]  # Extract folder ID (e.g., '1' from 'Session1')
                     
-                    # Collect in sentence forlder for improvised samples only
+                    # Collect in sentence folder for improvised samples only
                     sentence_folder = folder / "sentences" / "wav"
                     
                     for folder_sample in sentence_folder.iterdir():
                         if "impro" in folder_sample.name:
-                            sample_data = {
-                                'session_id': folder_id, #es. '1'
-                                'audio_path': None, # es. IEMOCAP_full_release/Session4/sentences/MOCAP_hand/Ses04F_impro06/Ses04F_impro06_F002.wav
-                                'sample_id': None, # es. 'Ses04F_impro06_F002'
-                                'actor': None, #es. 'F'
-                                'impro_id': None, #es. '06'
-                                'label': None #es. 'happy'
-                            }
-                            actor = folder_sample.name.split("_")[0][-1]  # Extract actor S or F
-                            impro_id = folder_sample.name.split("impro")[-2]  # Extract impro ID es. 06
-                            sample_data['actor'] = actor
-                            sample_data['impro_id'] = impro_id
+                            actor = folder_sample.name.split("_")[0][-1]  # Extract actor M or F
+                            impro_id = folder_sample.name.split("impro")[1][:2]  # Extract impro ID es. 06
                             
-                            for sample_file in sorted(folder_sample.glob("*.wav")):
-                                sample_id = sample_file.stem  # Extract sample ID without extension
-                                sample_folder = sentence_folder / folder_sample.name / sample_file.name  # Extract the full path of the sample file Es. IEMOCAP_full_release/Session4/sentences/MOCAP_hand/Ses04F_impro06/Ses04F_impro06_F002.wav
-                                sample_data['audio_path'] = sample_folder
-                                sample_data['sample_id'] = sample_id
-
+                            # Load label file once per improvisation folder
                             label_folder = folder / "dialog" / "EmoEvaluation"
-                            label_file = label_folder / f"{folder_sample.name}.txt" #es. IEMOCAP_full_release/Session4/dialog/EmoEvaluation/Ses01F_impro06.txt
-                            #Open Label file and extract label for the sample Ses04F_impro06_F002, search the line that contains the sample_id, split and after the name there is the label
+                            label_file = label_folder / f"{folder_sample.name}.txt" 
+                            
+                            # Parse the label file to create a mapping: sample_id -> emotion_label
+                            sample_labels = {}
                             try:
                                 with open(label_file, 'r') as f:
                                     for line in f:
-                                        if sample_id in line:
+                                        if line.strip():
                                             parts = line.strip().split('\t')
-                                            # Example of line : [6.2901 - 8.2357]	Ses01F_impro01_F000	neu	[2.5000, 2.5000, 2.5000]
-                                            emotion_label = parts[2]  # Extract the emotion label
-                                            
-                                            # FILTRO: Solo le 4 emozioni che ci interessano
-                                            if emotion_label not in self.EMOTION_DICT:
-                                                break
-                                            
-                                            sample_data['label'] = emotion_label
-                                            break
+                                            # Example: [6.2901 - 8.2357]	Ses01F_impro01_F000	neu	[2.5000, 2.5000, 2.5000]
+                                            if len(parts) >= 3:
+                                                sample_id = parts[1]
+                                                emotion_label = parts[2]
+                                                
+                                                # FILTRO: Solo le 4 emozioni che ci interessano
+                                                if emotion_label in self.EMOTION_DICT:
+                                                    sample_labels[sample_id] = emotion_label
                             except FileNotFoundError:
                                 print(f"      ⚠ Label file not found: {label_file}")
+                                continue
                             
-                            samples.append(sample_data)
+                            # Now iterate through all WAV files in this improvisation folder
+                            for sample_file in sorted(folder_sample.glob("*.wav")):
+                                sample_id = sample_file.stem  # Extract sample ID without extension (e.g., 'Ses04F_impro06_F002')
+                                audio_path = sample_file  # Full path to audio file
+                                
+                                # Check if this sample has a valid emotion label
+                                if sample_id in sample_labels:
+                                    sample_data = {
+                                        'session_id': folder_id,
+                                        'audio_path': audio_path,
+                                        'sample_id': sample_id,
+                                        'actor': actor,
+                                        'impro_id': impro_id,
+                                        'label': sample_labels[sample_id]
+                                    }
+                                    samples.append(sample_data)
         
         print(f"✅ Collected {len(samples)} samples in total")
         print(f"   - Improvised samples only")
