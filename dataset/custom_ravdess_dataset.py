@@ -65,8 +65,6 @@ class CustomRAVDESSDataset(Dataset):
         
         self.samples = self._collect_samples()
         self._split_dataset()
-        
-        print(f"✅ RAVDESS Initialized: {len(self.samples)} {split} samples")
 
 
 
@@ -150,11 +148,6 @@ class CustomRAVDESSDataset(Dataset):
                 'metadata': metadata
             })
         
-        print(f"✅ Dopo i filtri: {len(samples)} samples validi")
-        print(f"   - Audio-only (modality 03)")
-        print(f"   - Speech-only (vocal_channel 01)")
-        print(f"   - Emotions: {list(self.EMOTION_DICT.values())}")
-        
         return samples
     
 
@@ -163,70 +156,33 @@ class CustomRAVDESSDataset(Dataset):
         Split dataset into train/validation/test sets con split fisso basato su ID attori.
         
         Split predefinito:
-        - Training: Actors 01-20 (10 maschi dispari + 10 femmine pari)
-        - Validation: Actors 21-22 (1 maschio dispari + 1 femmina pari)
-        - Test: Actors 23-24 (1 maschio dispari + 1 femmina pari)
-        
-        Questo garantisce:
-        - Speaker-independent (nessun attore ripetuto tra i set)
-        - Split deterministico (sempre uguale)
-        - Bilanciamento perfetto di genere
+        - Training: Actors 01-20 (10 maschi dispari + 10 femmine pari) [cite: 22]
+        - Validation: Actors 21-22 (1 maschio dispari + 1 femmina pari) [cite: 23]
+        - Test: Actors 23-24 (1 maschio dispari + 1 femmina pari) [cite: 24]
         """
         if len(self.samples) == 0:
             raise ValueError("No samples found in dataset!")
         
-        # Split fisso basato su ID attori
-        train_actors = set(range(1, 21))      # 1-20
-        validation_actors = set([21, 22])     # 21-22
-        test_actors = set([23, 24])           # 23-24
+        # Definizione Split Attori
+        train_actors = set(range(1, 21))
+        val_actors = {21, 22}
+        test_actors = {23, 24}
         
-        # Verifica quali attori sono effettivamente presenti nei dati
-        available_actors = set([int(s['metadata']['actor']) for s in self.samples])
-        
-        # Filtra solo gli attori presenti
-        train_actors = train_actors & available_actors
-        validation_actors = validation_actors & available_actors
-        test_actors = test_actors & available_actors
-        
-        # Conta campioni per ogni set
-        train_samples_list = [s for s in self.samples if int(s['metadata']['actor']) in train_actors]
-        val_samples_list = [s for s in self.samples if int(s['metadata']['actor']) in validation_actors]
-        test_samples_list = [s for s in self.samples if int(s['metadata']['actor']) in test_actors]
-        
-        total_samples = len(self.samples)
-        
-        # Statistiche genere per ogni set
-        def get_gender_stats(actors_set):
-            males = [a for a in actors_set if a % 2 == 1]
-            females = [a for a in actors_set if a % 2 == 0]
-            return len(males), len(females), males, females
-        
-        train_m, train_f, train_males, train_females = get_gender_stats(train_actors)
-        val_m, val_f, val_males, val_females = get_gender_stats(validation_actors)
-        test_m, test_f, test_males, test_females = get_gender_stats(test_actors)
-        
-        print(f"📊 Totale campioni: {total_samples}")
-        print(f"📊 Totale attori disponibili: {len(available_actors)}")
-        
-        print(f"\n🔀 Split fisso predefinito:")
-        print(f"   Train:      Actors 01-20 ({train_m}M+{train_f}F) → {len(train_samples_list)} campioni ({len(train_samples_list)/total_samples*100:.1f}%)")
-        print(f"   Validation: Actors 21-22 ({val_m}M+{val_f}F) → {len(val_samples_list)} campioni ({len(val_samples_list)/total_samples*100:.1f}%)")
-        print(f"   Test:       Actors 23-24 ({test_m}M+{test_f}F) → {len(test_samples_list)} campioni ({len(test_samples_list)/total_samples*100:.1f}%)")
-        
-        print(f"\n👥 Attori assegnati:")
-        print(f"   Train:      {sorted(train_actors)}")
-        print(f"   Validation: {sorted(validation_actors)}")
-        print(f"   Test:       {sorted(test_actors)}")
-        
-        # Filtra i samples in base agli attori
+        # Selezione del target in base allo split richiesto
         if self.split == 'train':
-            self.samples = train_samples_list
+            target_actors = train_actors
         elif self.split == 'validation':
-            self.samples = val_samples_list
+            target_actors = val_actors
         elif self.split == 'test':
-            self.samples = test_samples_list
+            target_actors = test_actors
         else:
-            raise ValueError(f"Split non valido: {self.split}. Usa 'train', 'validation' o 'test'.")
+            raise ValueError(f"Split non valido: {self.split}")
+            
+        # Filtraggio: Mantieni solo i sample degli attori nel target set
+        self.samples = [
+            s for s in self.samples 
+            if int(s['metadata']['actor']) in target_actors
+        ]
     
     
     
