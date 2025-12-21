@@ -114,7 +114,7 @@ if __name__ == "__main__":
         # Download RAVDESS
         ravdess_ok = download_ravdess()
         # Download IEMOCAP
-        # iemocap_ok = download_iemocap()
+        iemocap_ok = download_iemocap()
         
         # Riepilogo finale
         print("\n" + "="*60)
