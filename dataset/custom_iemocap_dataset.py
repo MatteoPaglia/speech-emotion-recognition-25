@@ -348,11 +348,11 @@ class CustomIEMOCAPDataset(Dataset):
         std = log_mel_spec.std()
         log_mel_spec = (log_mel_spec - mean) / (std + 1e-6)
         
-        # 5. Return dictionary witi no label logic implemented
+        # 5. Return dictionary - train set unsupervised (no labels)
         return {
-            'audio_features': log_mel_spec,      # Tensor [1, 128, T]
-            'emotion_id': emotion_id,            # Int: 0-3
-            'emotion': emotion_label if self.split != 'train' else None,  # Emotion o None
-            'actor_id': speaker_id               # Str: 'M' o 'F'
+            'audio_features': log_mel_spec,                              # Tensor [1, 128, T]
+            'emotion_id': emotion_id if self.split != 'train' else -1,  # -1 = no label for train
+            'emotion': emotion_label if self.split != 'train' else None, # None for train
+            'actor_id': speaker_id                                       # Str: 'M' o 'F'
         }
 
