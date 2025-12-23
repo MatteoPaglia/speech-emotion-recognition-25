@@ -21,6 +21,7 @@ import librosa
 import numpy as np
 from pathlib import Path
 from torch.utils.data import Dataset
+from utils.get_dataset_statistics import print_dataset_stats
 
 
 class CustomIEMOCAPDataset(Dataset):
@@ -41,7 +42,7 @@ class CustomIEMOCAPDataset(Dataset):
         'ang': 3    # angry
     }
     
-    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=2048, target_hop_length=512, target_n_mels=128, use_silence_trimming=True):
+    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=2048, target_hop_length=512, target_n_mels=128, use_silence_trimming=True, use_avg_audio=True):
         """
         Args:
             dataset_root (str): Path to IEMOCAP dataset root folder
@@ -53,11 +54,13 @@ class CustomIEMOCAPDataset(Dataset):
             target_hop_length (int): Hop length (512)
             target_n_mels (int): Numero di mel bins (128)
             use_silence_trimming (bool): Se applicare silence trimming
+            use_avg_audio (bool): Se True usa media della durata, se False usa massimo
         """
         self.dataset_root = Path(dataset_root)
         self.split = split
         self.transform = transform
         self.use_silence_trimming = use_silence_trimming
+        self.use_avg_audio = use_avg_audio
         
         # Audio processing parameters (identici a RAVDESS)
         self.target_sample_rate = target_sample_rate
@@ -68,9 +71,10 @@ class CustomIEMOCAPDataset(Dataset):
         # Default target_samples
         self.target_samples = int(target_length * self.target_sample_rate)  # 48000
         
-        # Flag e variabile per la media durata POST-TRIMMING (calcolata lazy al primo uso)
-        self.mean_trimmed_samples_computed = False
+        # Flag e variabili per la durata POST-TRIMMING (calcolate lazy al primo uso)
+        self.trimmed_stats_computed = False
         self.mean_trimmed_samples = None
+        self.max_trimmed_samples = None
         
         # Pre-carica tutte le etichette: {sample_id: emotion_label}
         self.label_dict = self._preload_all_labels()
@@ -185,130 +189,29 @@ class CustomIEMOCAPDataset(Dataset):
         if len(self.samples) == 0:
             raise ValueError("No samples found in dataset!")
         
-        # Calcola statistiche del dataset
-        stats = self.dataset_stat(session_train, session_validation, session_test)
+        
         
         # Filtra i samples in base alle sessioni
-        train_samples = stats['samples_by_split']['train']
-        validation_samples = stats['samples_by_split']['validation']
-        test_samples = stats['samples_by_split']['test']
+        train_samples = [s for s in self.samples if s['session_id'] in session_train]
+        validation_samples = [s for s in self.samples if s['session_id'] in session_validation]
+        test_samples = [s for s in self.samples if s['session_id'] in session_test]
+
 
         print(f"📊 Statistiche del dataset IEMOCAP:")
         if self.split == 'train':
             self.samples = train_samples
-            print(f"   Train:      Sessions {stats['train']['sessions']} ({stats['train']['speakers']} speakers) → {stats['train']['samples']} campioni ({stats['train']['percentage']:.1f}%) | Lunghezza media: {stats['train']['avg_audio_length']:.2f}s")
-            print(f"\n👤 Speaker distribution:")
-            print(f"   Train:      M={stats['train']['males']}, F={stats['train']['females']}")
+            print_dataset_stats(self.samples, name="IEMOCAP TRAINING SET")
 
         elif self.split == 'validation':
             self.samples = validation_samples
-            print(f"   Validation: Sessions {stats['validation']['sessions']} ({stats['validation']['speakers']} speakers) → {stats['validation']['samples']} campioni ({stats['validation']['percentage']:.1f}%) | Lunghezza media: {stats['validation']['avg_audio_length']:.2f}s")
-            print(f"\n👤 Speaker distribution:")
-            print(f"   Validation: M={stats['validation']['males']}, F={stats['validation']['females']}")
-
-        else:
+            print_dataset_stats(self.samples, name="IEMOCAP VALIDATION SET")    
+          
+        elif self.split == 'test':
             self.samples = test_samples
-            print(f"   Test:       Sessions {stats['test']['sessions']} ({stats['test']['speakers']} speakers) → {stats['test']['samples']} campioni ({stats['test']['percentage']:.1f}%) | Lunghezza media: {stats['test']['avg_audio_length']:.2f}s")
-            print(f"\n👤 Speaker distribution:")
-            print(f"   Test:       M={stats['test']['males']}, F={stats['test']['females']}")
-    
-    
-    def dataset_stat(self, session_train, session_validation, session_test):
-        """
-        Calcola tutte le statistiche del dataset per i 3 range di divisione per sessione.
-        
-        Args:
-            session_train (list): Lista degli ID di sessione per training
-            session_validation (list): Lista degli ID di sessione per validation
-            session_test (list): Lista degli ID di sessione per test
-        
-        Returns:
-            dict: Dizionario con tutte le statistiche calcolate
-        """
-        import librosa
-        
-        # Sessioni disponibili nei dati
-        available_sessions = set([s['session_id'] for s in self.samples])
-        
-        # Filtra i samples per ogni split
-        train_samples_list = [s for s in self.samples if s['session_id'] in session_train]
-        validation_samples_list = [s for s in self.samples if s['session_id'] in session_validation]
-        test_samples_list = [s for s in self.samples if s['session_id'] in session_test]
-        
-        # Calcola speaker count e genere per ogni split
-        def get_speaker_stats(samples_list):
-            """Calcola statistiche degli speaker (M/F)."""
-            speakers = set([s['actor'] for s in samples_list])
-            males = [s for s in speakers if s == 'M']
-            females = [s for s in speakers if s == 'F']
-            return len(males), len(females)
-        
-        def get_audio_length_stats(samples_list):
-            """Calcola la lunghezza media dei file audio."""
-            if not samples_list:
-                return 0.0
+            print_dataset_stats(self.samples, name="IEMOCAP TEST SET")
+        else:
+            raise ValueError("Invalid split name. Use 'train', 'validation', or 'test'.")
             
-            total_length = 0.0
-            count = 0
-            for sample in samples_list:
-                try:
-                    audio, sr = librosa.load(str(sample['audio_path']), sr=self.target_sample_rate)
-                    # Lunghezza in secondi
-                    length = len(audio) / sr
-                    total_length += length
-                    count += 1
-                except:
-                    continue
-            
-            return total_length / count if count > 0 else 0.0
-        
-        train_m, train_f = get_speaker_stats(train_samples_list)
-        validation_m, validation_f = get_speaker_stats(validation_samples_list)
-        test_m, test_f = get_speaker_stats(test_samples_list)
-        
-        # Calcola lunghezze medie audio
-        train_avg_length = get_audio_length_stats(train_samples_list)
-        validation_avg_length = get_audio_length_stats(validation_samples_list)
-        test_avg_length = get_audio_length_stats(test_samples_list)
-        
-        total_samples = len(self.samples)
-        
-        return {
-            'total_samples': total_samples,
-            'available_sessions': available_sessions,
-            'train': {
-                'sessions': session_train,
-                'speakers': train_m + train_f,
-                'males': train_m,
-                'females': train_f,
-                'samples': len(train_samples_list),
-                'percentage': len(train_samples_list) / total_samples * 100 if total_samples > 0 else 0,
-                'avg_audio_length': train_avg_length
-            },
-            'validation': {
-                'sessions': session_validation,
-                'speakers': validation_m + validation_f,
-                'males': validation_m,
-                'females': validation_f,
-                'samples': len(validation_samples_list),
-                'percentage': len(validation_samples_list) / total_samples * 100 if total_samples > 0 else 0,
-                'avg_audio_length': validation_avg_length
-            },
-            'test': {
-                'sessions': session_test,
-                'speakers': test_m + test_f,
-                'males': test_m,
-                'females': test_f,
-                'samples': len(test_samples_list),
-                'percentage': len(test_samples_list) / total_samples * 100 if total_samples > 0 else 0,
-                'avg_audio_length': test_avg_length
-            },
-            'samples_by_split': {
-                'train': train_samples_list,
-                'validation': validation_samples_list,
-                'test': test_samples_list
-            }
-        }
     
     
     
@@ -337,10 +240,11 @@ class CustomIEMOCAPDataset(Dataset):
             except Exception as e:
                 print(f"⚠️  Errore nel trim_silence: {e}")
         
-        # CALCOLA MEDIA POST-TRIMMING (una sola volta, lazy)
-        if not self.mean_trimmed_samples_computed:
-            print(f"\n📊 Calcolando media durata POST-TRIMMING per split '{self.split}'...")
+        # CALCOLA MEDIA E MASSIMO POST-TRIMMING (una sola volta, lazy)
+        if not self.trimmed_stats_computed:
+            print(f"\n📊 Calcolando statistiche durata POST-TRIMMING per split '{self.split}'...")
             total_samples = 0
+            max_samples = 0
             count = 0
             
             for idx, sample in enumerate(self.samples):
@@ -352,7 +256,10 @@ class CustomIEMOCAPDataset(Dataset):
                         wf = resampler(wf)
                     
                     if wf.shape[0] > 1:
-                        wf = torch.mean(wf, dim=0, keepdim=True)
+                        if self.use_avg_audio:
+                            wf = torch.mean(wf, dim=0, keepdim=True)
+                        else:
+                            wf = torch.max(wf, dim=0, keepdim=True)[0].unsqueeze(0)
                     
                     # TRIM SILENZIO
                     if self.use_silence_trimming:
@@ -361,6 +268,7 @@ class CustomIEMOCAPDataset(Dataset):
                         wf = torch.from_numpy(trimmed_wf).unsqueeze(0).float()
                     
                     total_samples += wf.shape[1]
+                    max_samples = max(max_samples, wf.shape[1])
                     count += 1
                     
                     if (idx + 1) % max(1, len(self.samples) // 5) == 0:
@@ -370,17 +278,21 @@ class CustomIEMOCAPDataset(Dataset):
             
             if count > 0:
                 self.mean_trimmed_samples = total_samples // count
+                self.max_trimmed_samples = max_samples
                 avg_seconds = self.mean_trimmed_samples / self.target_sample_rate
-                print(f"✅ Media calcolata: {avg_seconds:.2f}s ({self.mean_trimmed_samples} campioni)\n")
+                max_seconds = self.max_trimmed_samples / self.target_sample_rate
+                print(f"✅ Media: {avg_seconds:.2f}s ({self.mean_trimmed_samples} campioni)")
+                print(f"✅ Massimo: {max_seconds:.2f}s ({self.max_trimmed_samples} campioni)\n")
             else:
                 self.mean_trimmed_samples = int(3.0 * self.target_sample_rate)
+                self.max_trimmed_samples = int(3.0 * self.target_sample_rate)
                 print(f"❌ Calcolo fallito, usando default 3.0s\n")
             
-            self.mean_trimmed_samples_computed = True
+            self.trimmed_stats_computed = True
         
-        # FASE 2: CENTER CROP o PADDING basato sulla media
+        # FASE 2: CENTER CROP o PADDING basato su media o massimo
         c, n = waveform.shape
-        target_len = self.mean_trimmed_samples
+        target_len = self.max_trimmed_samples if not self.use_avg_audio else self.mean_trimmed_samples
         
         if n > target_len:
             # Audio troppo lungo: CENTER CROP (prendi la parte centrale)

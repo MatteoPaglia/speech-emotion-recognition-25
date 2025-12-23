@@ -19,6 +19,7 @@ import librosa
 import numpy as np
 from pathlib import Path
 from torch.utils.data import Dataset
+from utils.get_dataset_statistics import print_dataset_stats
 
 
 class CustomRAVDESSDataset(Dataset):
@@ -43,7 +44,7 @@ class CustomRAVDESSDataset(Dataset):
     MODALITY_AUDIO_ONLY = '03'  # Solo audio (no video)
     VOCAL_CHANNEL_SPEECH = '01'  # Solo speech (no song)
     
-    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=2048, target_hop_length=512, target_n_mels=128, use_silence_trimming=True):
+    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=2048, target_hop_length=512, target_n_mels=128, use_silence_trimming=True, use_avg_audio=True):
         """
         Args:
             dataset_root (str): Path to the RAVDESS dataset root folder
@@ -60,6 +61,7 @@ class CustomRAVDESSDataset(Dataset):
         self.split = split
         self.transform = transform
         self.use_silence_trimming = use_silence_trimming
+        self.use_avg_audio = use_avg_audio
 
         #hyperparameters per l'estrazione delle feature
         self.target_sample_rate = target_sample_rate
@@ -70,9 +72,10 @@ class CustomRAVDESSDataset(Dataset):
         # Default target_samples 
         self.target_samples = int(target_length * self.target_sample_rate) # 48000
         
-        # Flag e variabile per la media durata POST-TRIMMING (calcolata lazy al primo uso)
-        self.mean_trimmed_samples_computed = False
+        # Flag e variabili per la durata POST-TRIMMING (calcolate lazy al primo uso)
+        self.trimmed_stats_computed = False
         self.mean_trimmed_samples = None
+        self.max_trimmed_samples = None
         
         # Trasformazione MelSpectrogram (Identica a IEMOCAP per coerenza)
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
@@ -134,8 +137,6 @@ class CustomRAVDESSDataset(Dataset):
         # RAVDESS può avere struttura: ravdess/Actor_XX/*.wav
         audio_files = list(self.dataset_root.rglob('*.wav'))
         
-        print(f"🔍 Trovati {len(audio_files)} file audio totali nel dataset")
-        
         # 3. Itera su ogni file audio trovato
         for audio_file in audio_files:
             
@@ -189,135 +190,26 @@ class CustomRAVDESSDataset(Dataset):
         
         # Split fisso basato su ID attori
         train_actors = set(range(1, 21))      # 1-20
-        validation_actors = set([21, 22])     # 21-22
-        test_actors = set([23, 24])           # 23-24
-        
-        # Calcola statistiche del dataset
-        stats = self.dataset_stat(train_actors, validation_actors, test_actors)
+        validation_actors = {21, 22}     # 21-22
+        test_actors = {23, 24}           # 23-24
         
         print(f"📊 Statistiche del dataset RAVDESS:")
         # Filtra i samples in base agli attori
         if self.split == 'train':
-            self.samples = stats['samples_by_split']['train']
-            print(f"   Train:      Actors 01-20 ({stats['train']['males']}M+{stats['train']['females']}F) → {stats['train']['samples']} campioni ({stats['train']['percentage']:.1f}%) | Lunghezza media: {stats['train']['avg_audio_length']:.2f}s")
-            print(f"\n👥 Attori assegnati:")
-            print(f"   Train:      {sorted(stats['train']['actors'])}")
+            self.samples = train_actors
+            print_dataset_stats(self.samples, name="RAVDESS TRAINING SET")
+            
         elif self.split == 'validation':
-            self.samples = stats['samples_by_split']['validation']
-            print(f"   Validation: Actors 21-22 ({stats['validation']['males']}M+{stats['validation']['females']}F) → {stats['validation']['samples']} campioni ({stats['validation']['percentage']:.1f}%) | Lunghezza media: {stats['validation']['avg_audio_length']:.2f}s")
-            print(f"\n👥 Attori assegnati:")
-            print(f"   Validation: {sorted(stats['validation']['actors'])}")
+            self.samples = validation_actors
+            print_dataset_stats(self.samples, name="RAVDESS VALIDATION SET")
+            
         elif self.split == 'test':
-            self.samples = stats['samples_by_split']['test']
-            print(f"   Test:       Actors 23-24 ({stats['test']['males']}M+{stats['test']['females']}F) → {stats['test']['samples']} campioni ({stats['test']['percentage']:.1f}%) | Lunghezza media: {stats['test']['avg_audio_length']:.2f}s")
-            print(f"\n👥 Attori assegnati:")
-            print(f"   Test:       {sorted(stats['test']['actors'])}")
+            self.samples = test_actors
+            print_dataset_stats(self.samples, name="RAVDESS TEST SET")
+            
             
         else:
             raise ValueError(f"Split non valido: {self.split}. Usa 'train', 'validation' o 'test'.")
-    
-    def dataset_stat(self, train_actors, validation_actors, test_actors):
-        """
-        Calcola tutte le statistiche del dataset per i 3 range di divisione.
-        
-        Args:
-            train_actors (set): Set degli ID degli attori di training
-            validation_actors (set): Set degli ID degli attori di validation
-            test_actors (set): Set degli ID degli attori di test
-        
-        Returns:
-            dict: Dizionario con tutte le statistiche calcolate
-        """
-        def get_gender_stats(actors_set):
-            """Calcola statistiche di genere per un set di attori."""
-            males = [a for a in actors_set if a % 2 == 1]
-            females = [a for a in actors_set if a % 2 == 0]
-            return len(males), len(females), males, females
-        
-        def get_audio_length_stats(samples_list):
-            """Calcola la lunghezza media dei file audio."""
-            if not samples_list:
-                return 0.0
-            
-            total_length = 0.0
-            count = 0
-            errors = 0
-            for sample in samples_list:
-                try:
-                    audio, sr = librosa.load(str(sample['path']), sr=None)
-                    # Lunghezza in secondi
-                    length = len(audio) / sr
-                    total_length += length
-                    count += 1
-                except Exception as e:
-                    errors += 1
-                    print(f"⚠️  Errore nel caricamento di {sample['path']}: {e}")
-                    continue
-            
-            if errors > 0:
-                print(f"⚠️  {errors}/{len(samples_list)} file non caricati correttamente")
-            
-            return total_length / count if count > 0 else 0.0
-        
-        # Attori disponibili nei dati
-        available_actors = set([int(s['metadata']['actor']) for s in self.samples])
-        
-        # Filtra gli attori effettivamente presenti nei dati
-        train_actors = train_actors & available_actors
-        validation_actors = validation_actors & available_actors
-        test_actors = test_actors & available_actors
-        
-        # Calcola statistiche di genere per ogni set
-        train_m, train_f, train_males, train_females = get_gender_stats(train_actors)
-        val_m, val_f, val_males, val_females = get_gender_stats(validation_actors)
-        test_m, test_f, test_males, test_females = get_gender_stats(test_actors)
-        
-        # Filtra campioni per ogni set
-        train_samples_list = [s for s in self.samples if int(s['metadata']['actor']) in train_actors]
-        val_samples_list = [s for s in self.samples if int(s['metadata']['actor']) in validation_actors]
-        test_samples_list = [s for s in self.samples if int(s['metadata']['actor']) in test_actors]
-        
-        # Calcola lunghezze medie audio
-        train_avg_length = get_audio_length_stats(train_samples_list)
-        val_avg_length = get_audio_length_stats(val_samples_list)
-        test_avg_length = get_audio_length_stats(test_samples_list)
-        
-        total_samples = len(self.samples)
-        
-        return {
-            'total_samples': total_samples,
-            'available_actors': available_actors,
-            'train': {
-                'actors': train_actors,
-                'males': train_m,
-                'females': train_f,
-                'samples': len(train_samples_list),
-                'percentage': len(train_samples_list) / total_samples * 100 if total_samples > 0 else 0,
-                'avg_audio_length': train_avg_length
-            },
-            'validation': {
-                'actors': validation_actors,
-                'males': val_m,
-                'females': val_f,
-                'samples': len(val_samples_list),
-                'percentage': len(val_samples_list) / total_samples * 100 if total_samples > 0 else 0,
-                'avg_audio_length': val_avg_length
-            },
-            'test': {
-                'actors': test_actors,
-                'males': test_m,
-                'females': test_f,
-                'samples': len(test_samples_list),
-                'percentage': len(test_samples_list) / total_samples * 100 if total_samples > 0 else 0,
-                'avg_audio_length': test_avg_length
-            },
-            'samples_by_split': {
-                'train': train_samples_list,
-                'validation': val_samples_list,
-                'test': test_samples_list
-            }
-        }
-    
     
     
 
@@ -327,6 +219,8 @@ class CustomRAVDESSDataset(Dataset):
         FASE 1: Trim silenzio dalle estremità (calcolo media pst-trimming se necessario)
         FASE 2: Center crop o padding alla durata media POST-TRIMMING
         
+        TODO: collate function necessaria ? 
+
         Args:
             waveform (torch.Tensor): Tensore audio [1, num_samples]
         
@@ -337,15 +231,16 @@ class CustomRAVDESSDataset(Dataset):
         if self.use_silence_trimming:
             try:
                 waveform_np = waveform.numpy()[0]
-                trimmed, _ = librosa.effects.trim(waveform_np, top_db=40, ref=np.max)
+                trimmed, _ = librosa.effects.trim(waveform_np, top_db=40, ref=np.max) #TODO: MODIFY PARAM ? 
                 waveform = torch.from_numpy(trimmed).unsqueeze(0).float()
             except Exception as e:
                 print(f"⚠️  Errore nel trim_silence: {e}")
         
-        # CALCOLA MEDIA POST-TRIMMING (una sola volta, lazy)
-        if not self.mean_trimmed_samples_computed:
-            print(f"\n📊 Calcolando media durata POST-TRIMMING per split '{self.split}'...")
+        # CALCOLA MEDIA E MASSIMO POST-TRIMMING (una sola volta, lazy)
+        if not self.trimmed_stats_computed:
+            print(f"\n📊 Calcolando statistiche durata POST-TRIMMING per split '{self.split}'...")
             total_samples = 0
+            max_samples = 0
             count = 0
             
             for idx, sample in enumerate(self.samples):
@@ -357,7 +252,10 @@ class CustomRAVDESSDataset(Dataset):
                         wf = resampler(wf)
                     
                     if wf.shape[0] > 1:
-                        wf = torch.mean(wf, dim=0, keepdim=True)
+                        if self.use_avg_audio:
+                            wf = torch.mean(wf, dim=0, keepdim=True)
+                        else:   
+                            wf = torch.max(wf, dim=0, keepdim=True)[0].unsqueeze(0)
                     
                     # TRIM SILENZIO
                     if self.use_silence_trimming:
@@ -366,6 +264,7 @@ class CustomRAVDESSDataset(Dataset):
                         wf = torch.from_numpy(trimmed_wf).unsqueeze(0).float()
                     
                     total_samples += wf.shape[1]
+                    max_samples = max(max_samples, wf.shape[1])
                     count += 1
                     
                     if (idx + 1) % max(1, len(self.samples) // 5) == 0:
@@ -375,20 +274,24 @@ class CustomRAVDESSDataset(Dataset):
             
             if count > 0:
                 self.mean_trimmed_samples = total_samples // count
+                self.max_trimmed_samples = max_samples
                 avg_seconds = self.mean_trimmed_samples / self.target_sample_rate
-                print(f"✅ Media calcolata: {avg_seconds:.2f}s ({self.mean_trimmed_samples} campioni)\n")
+                max_seconds = self.max_trimmed_samples / self.target_sample_rate
+                print(f"✅ Media: {avg_seconds:.2f}s ({self.mean_trimmed_samples} campioni)")
+                print(f"✅ Massimo: {max_seconds:.2f}s ({self.max_trimmed_samples} campioni)\n")
             else:
                 self.mean_trimmed_samples = int(3.0 * self.target_sample_rate)
+                self.max_trimmed_samples = int(3.0 * self.target_sample_rate)
                 print(f"❌ Calcolo fallito, usando default 3.0s\n")
             
-            self.mean_trimmed_samples_computed = True
+            self.trimmed_stats_computed = True
         
-        # FASE 2: CENTER CROP o PADDING basato sulla media
+        # FASE 2: CENTER CROP o PADDING basato su media o massimo
         c, n = waveform.shape
-        target_len = self.mean_trimmed_samples
+        target_len = self.max_trimmed_samples if not self.use_avg_audio else self.mean_trimmed_samples
         
         if n > target_len:
-            # Audio troppo lungo: CENTER CROP (prendi la parte centrale)
+            # Audio troppo lungo: CENTER CROP (prendi la parte centrale) --- TODO:RANDOM CROP?
             start = (n - target_len) // 2
             waveform = waveform[:, start:start+target_len]
                 
