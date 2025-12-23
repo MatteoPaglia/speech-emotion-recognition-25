@@ -130,7 +130,7 @@ if __name__ == "__main__":
     val_RAVDESS_dataloader = DataLoader(val_RAVDESS_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     # Inizializzazione Modello
-    model = CRNN_BiLSTM(batch_size=BATCH_SIZE, time_steps=TIME_STEPS, num_classes=NUM_CLASSES).to(DEVICE)
+    model = CRNN_BiLSTM(batch_size=BATCH_SIZE, time_steps=TIME_STEPS).to(DEVICE)
 
     # Loss e Optimizer
     # CrossEntropyLoss include già la Softmax internamente!
