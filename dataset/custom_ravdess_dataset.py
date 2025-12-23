@@ -190,21 +190,21 @@ class CustomRAVDESSDataset(Dataset):
         
         # Split fisso basato su ID attori
         train_actors = set(range(1, 21))      # 1-20
-        validation_actors = {21, 22}     # 21-22
-        test_actors = {23, 24}           # 23-24
+        validation_actors = {21, 22}          # 21-22
+        test_actors = {23, 24}                # 23-24
         
         print(f"📊 Statistiche del dataset RAVDESS:")
         # Filtra i samples in base agli attori
         if self.split == 'train':
-            self.samples = train_actors
+            self.samples = [s for s in self.samples if int(s['metadata']['actor']) in train_actors]
             print_dataset_stats(self.samples, name="RAVDESS TRAINING SET")
             
         elif self.split == 'validation':
-            self.samples = validation_actors
+            self.samples = [s for s in self.samples if int(s['metadata']['actor']) in validation_actors]
             print_dataset_stats(self.samples, name="RAVDESS VALIDATION SET")
             
         elif self.split == 'test':
-            self.samples = test_actors
+            self.samples = [s for s in self.samples if int(s['metadata']['actor']) in test_actors]
             print_dataset_stats(self.samples, name="RAVDESS TEST SET")
             
             
