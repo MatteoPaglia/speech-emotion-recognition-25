@@ -155,7 +155,8 @@ if __name__ == "__main__":
         # Checkpoint: Salva il modello se è il migliore finora
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            torch.save(model.state_dict(), "checkpoints/best_model.pth")
+            checkpoint_path = Path(__file__).parent / "checkpoints" / "best_model.pth"
+            torch.save(model.state_dict(), str(checkpoint_path))
             print(">>> Model Saved!")
 
     print("\n" + "="*80)
