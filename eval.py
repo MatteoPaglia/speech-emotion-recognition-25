@@ -25,6 +25,7 @@ EMOTION_LABELS = ['neutral', 'happy', 'sad', 'angry']
 def find_dataset_paths():
     """Ricerca i percorsi dei dataset"""
     possible_paths = [
+        Path('/kaggle/input/'), 
         Path.home() / '.cache' / 'kagglehub' / 'datasets',
         Path('/root/.cache/kagglehub/datasets'),
         Path('/tmp/kagglehub/datasets'),

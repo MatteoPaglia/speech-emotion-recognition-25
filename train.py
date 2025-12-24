@@ -27,7 +27,7 @@ MEL_BANDS = 128
 # --- 2. CONFIGURAZIONE CLASSE PER EARLY STOPPING ---
 class SimpleEarlyStopping:
     """Versione semplice: si ferma appena la validation loss smette di migliorare."""
-    def __init__(self, patience=3):
+    def __init__(self, patience=5):
         self.patience = patience
         self.best_loss = None
         self.counter = 0
