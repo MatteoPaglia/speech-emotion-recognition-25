@@ -24,6 +24,32 @@ NUM_CLASSES = 4       # 8 We consider only 4 emotions: Neutral, Happy, Sad, Angr
 TIME_STEPS = 200      # Consider avg or max time steps calculated before 
 MEL_BANDS = 128
 
+# --- 2. CONFIGURAZIONE CLASSE PER EARLY STOPPING ---
+class SimpleEarlyStopping:
+    """Versione semplice: si ferma appena la validation loss smette di migliorare."""
+    def __init__(self, patience=3):
+        self.patience = patience
+        self.best_loss = None
+        self.counter = 0
+        self.should_stop = False
+
+    def step(self, val_loss):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+            print(f"📊 Best val loss: {val_loss:.4f}")
+        elif val_loss < self.best_loss:
+            self.best_loss = val_loss
+            self.counter = 0
+            print(f"✓ Migliorato! New best: {val_loss:.4f}")
+        else:
+            self.counter += 1
+            print(f"⚠️ Nessun miglioramento ({self.counter}/{self.patience})")
+            if self.counter >= self.patience:
+                self.should_stop = True
+                print(f"🛑 STOP! Nessun miglioramento per {self.patience} epoche")
+
+print("✓ Classe SimpleEarlyStopping pronta!")
+
 # --- 3. RICERCA PERCORSI DATASET ---
 def find_dataset_paths():
     """Ricerca i percorsi dei dataset"""
