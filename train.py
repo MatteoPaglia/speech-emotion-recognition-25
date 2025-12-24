@@ -166,7 +166,7 @@ if __name__ == "__main__":
 
     # Ciclo delle Epoche
     best_val_acc = 0.0
-    early_stopping = SimpleEarlyStopping(patience=3)
+    early_stopping = SimpleEarlyStopping(patience=5)
 
     for epoch in range(NUM_EPOCHS):
         print(f"\nEpoch {epoch+1}/{NUM_EPOCHS}")
