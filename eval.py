@@ -147,7 +147,7 @@ if __name__ == "__main__":
     if not Path(MODEL_PATH).exists():
         raise FileNotFoundError(f"❌ Modello non trovato: {MODEL_PATH}")
     
-    model = CRNN_BiLSTM(batch_size=BATCH_SIZE, time_steps=TIME_STEPS, num_classes=NUM_CLASSES)
+    model = CRNN_BiLSTM(batch_size=BATCH_SIZE, time_steps=TIME_STEPS)
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     model = model.to(DEVICE)
     print(f"✅ Modello caricato da {MODEL_PATH}\n")
