@@ -54,6 +54,7 @@ print("✓ Classe SimpleEarlyStopping pronta!")
 def find_dataset_paths():
     """Ricerca i percorsi dei dataset"""
     possible_paths = [
+        Path('/kaggle/input/ravdess-emotional-speech-audio'),
         Path.home() / '.cache' / 'kagglehub' / 'datasets',
         Path('/root/.cache/kagglehub/datasets'),
         Path('/tmp/kagglehub/datasets'),
