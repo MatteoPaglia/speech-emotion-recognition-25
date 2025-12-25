@@ -45,7 +45,7 @@ class CRNN_BiLSTM(nn.Module):
 
         # Bi-LSTM
         self.lstm = nn.LSTM(
-            input_size=self.lstm_input_size, 
+            input_size=self.hidden_size,  # Input dal projection layer (128, non 1024)
             hidden_size=self.hidden_size, 
             num_layers=1,             # Solitamente 1 o 2 strati
             bidirectional=True, 
