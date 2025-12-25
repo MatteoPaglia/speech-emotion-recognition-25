@@ -166,14 +166,20 @@ if __name__ == "__main__":
     print(model)
     print("="*80 + "\n")
 
-    # Loss e Optimizer
-    # CrossEntropyLoss include già la Softmax internamente!
-    criterion = nn.CrossEntropyLoss() 
+    # Class weights per bilanciare le classi (normalizzati)
+    # Ordine delle classi (da EMOTION_ID_MAP in custom_ravdess_dataset.py):
+    # 0: Neutral (0.8) | 1: Happy (1.2) | 2: Sad (1.2) | 3: Angry (1.2)
+    class_weights = torch.tensor([0.8, 1.2, 1.2, 1.2], dtype=torch.float32).to(DEVICE)
+    # Normalizza i pesi (somma = 1)
+    class_weights = class_weights / class_weights.sum()
+
+    criterion = nn.CrossEntropyLoss(weight=class_weights,label_smoothing=0.1)
+    
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
 
     # Ciclo delle Epoche
     best_val_acc = 0.0
-    early_stopping = SimpleEarlyStopping(patience=5)
+    early_stopping = SimpleEarlyStopping(patience=2)
 
     # --- STAMPA IPERPARAMETRI ---
     print("\n" + "="*80)

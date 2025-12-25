@@ -39,6 +39,10 @@ class CRNN_BiLSTM(nn.Module):
         self.hidden_size = 128
         self.num_classes = 4  # Ho solo 4 classi di emozioni (Neutral, Happy, Sad, Angry)
 
+        # Projection Layer per ridurre gradualmente le dimensioni (evita collo di bottiglia)
+        # Riduciamo da 1024 -> 128 con una densa prima della LSTM
+        self.projection = nn.Linear(self.lstm_input_size, self.hidden_size)
+
         # Bi-LSTM
         self.lstm = nn.LSTM(
             input_size=self.lstm_input_size, 
@@ -79,7 +83,13 @@ class CRNN_BiLSTM(nn.Module):
         # -1 dice a PyTorch: "Calcola tu questa dimensione (che sarà 64*16 = 1024)"
         x = x.reshape(x.size(0), x.size(1), -1)
         
-        # Ora x ha dimensioni: (Batch, Time_Ridotto, 1024) ed è pronto per la LSTM
+        # Ora x ha dimensioni: (Batch, Time_Ridotto, 1024) ed è pronto per il projection
+        
+        # 3.5. Passaggio nel projection layer + attivazione
+        # Riduciamo da 1024 -> 128 gradualmente per evitare collo di bottiglia
+        x = self.projection(x)
+        x = torch.relu(x)  # Non-linearità per la rappresentazione
+        # Ora x è (Batch, Time_Ridotto, 128), molto più digeribile per la LSTM
         
         # 4. Passaggio attraverso la Bi-LSTM
         # La LSTM restituisce l'output e gli stati hidden (che qui non usiamo, quindi _)
