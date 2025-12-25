@@ -179,7 +179,7 @@ if __name__ == "__main__":
 
     # Ciclo delle Epoche
     best_val_acc = 0.0
-    early_stopping = SimpleEarlyStopping(patience=2)
+    early_stopping = SimpleEarlyStopping(patience=4)
 
     # --- STAMPA IPERPARAMETRI ---
     print("\n" + "="*80)
