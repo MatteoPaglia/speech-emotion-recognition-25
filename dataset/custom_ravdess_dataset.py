@@ -17,6 +17,7 @@ import torch
 import torchaudio
 import librosa
 import numpy as np
+import random
 from pathlib import Path
 from torch.utils.data import Dataset
 from utils.get_dataset_statistics import print_dataset_stats
@@ -85,6 +86,16 @@ class CustomRAVDESSDataset(Dataset):
             n_mels=self.n_mels
         )
         self.db_transform = torchaudio.transforms.AmplitudeToDB()
+        
+        # SpecAugment per Training (maschera parti dello spettrogramma)
+        # Solo per training, non per validation/test
+        if self.split == 'train':
+            self.spec_augment = torchaudio.transforms.Compose([
+                torchaudio.transforms.FrequencyMasking(freq_mask_param=15),  # Maschera 15 freq bin
+                torchaudio.transforms.TimeMasking(time_mask_param=20)        # Maschera 20 time steps
+            ])
+        else:
+            self.spec_augment = None
         
         self.samples = self._collect_samples()
         self._split_dataset()
@@ -322,12 +333,38 @@ class CustomRAVDESSDataset(Dataset):
         # 2. Process Waveform (trim silenzio + center crop/padding)
         waveform = self._process_waveform(waveform)
         
-        # 3. Augmentation Waveform (Opzionale per Phase 2)
-        # if self.split == 'train' ...
+        # 3. AUGMENTATION WAVEFORM (Solo per Training - Speech Emotion Recognition Safe)
+        if self.split == 'train':
+            # A. White Noise Addition (50% probabilità)
+            # Aiuta a rendere il modello robusto al rumore ambientale
+            if random.random() < 0.5:
+                noise_level = 0.003  # Piccola quantità di rumore
+                noise = torch.randn_like(waveform) * noise_level
+                waveform = waveform + noise
+            
+            # B. Amplitude Gain (50% probabilità)
+            # Simula variazioni di volume/distanza dal microfono (preserva emozione)
+            if random.random() < 0.5:
+                gain = random.uniform(0.8, 1.2)
+                waveform = waveform * gain
+                # Clipping per evitare distorsione
+                waveform = torch.clamp(waveform, -1.0, 1.0)
+            
+            # C. Time Shift (30% probabilità)
+            # Sposta temporalmente l'audio (simula timing variabile dell'emozione)
+            if random.random() < 0.3:
+                max_shift = int(0.1 * self.target_sample_rate)  # Shift fino al 10% della lunghezza
+                shift = random.randint(-max_shift, max_shift)
+                waveform = torch.roll(waveform, shift, dims=1)
         
-        # 5. Mel Spectrogram
+        # 4. Mel Spectrogram
         mel_spec = self.mel_transform(waveform)
         log_mel_spec = self.db_transform(mel_spec)
+        
+        # 4.5. SpecAugment (Solo per Training)
+        # Maschera parti casuali dello spettrogramma per aumentare robustezza
+        if self.spec_augment is not None:
+            log_mel_spec = self.spec_augment(log_mel_spec)
         
         # 5. Normalization (Z-score)
         mean = log_mel_spec.mean()
