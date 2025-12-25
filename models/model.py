@@ -32,10 +32,10 @@ class CRNN_BiLSTM(nn.Module):
         # )
 
         # Calcolo dimensione feature per la LSTM:
-        # Dopo 4 MaxPool (2x2), l'altezza (frequenza) diventa 128 / 16 = 8.
-        # I canali sono diventati 512.
-        # Quindi ogni step temporale avrà un vettore di: 512 * 8 = 4096 feature.
-        self.lstm_input_size = 512 * 8
+        # Dopo 3 MaxPool (2x2), l'altezza (frequenza) diventa 128 / 8 = 16.
+        # I canali sono diventati 64.
+        # Quindi ogni step temporale avrà un vettore di: 64 * 16 = 1024 feature.
+        self.lstm_input_size = 64 * 16
         self.hidden_size = 128
         self.num_classes = 4  # Ho solo 4 classi di emozioni (Neutral, Happy, Sad, Angry)
 
@@ -67,19 +67,19 @@ class CRNN_BiLSTM(nn.Module):
         x = self.block3(x)
         #x = self.block4(x)
         
-        # A questo punto x ha dimensioni: (Batch, 512, 8, Time_Ridotto)
+        # A questo punto x ha dimensioni: (Batch, 64, 16, Time_Ridotto)
         
         # 2. Permutazione delle dimensioni
         # La LSTM vuole il Tempo come seconda dimensione.
-        # Spostiamo le dimensioni: (Batch, Time_Ridotto, 512, 8)
+        # Spostiamo le dimensioni: (Batch, Time_Ridotto, 64, 16)
         x = x.permute(0, 3, 1, 2)
         
         # 3. LA RESHAPE VERA E PROPRIA
         # Fondiamo le ultime due dimensioni (Canali e Frequenza) in una sola (Feature)
-        # -1 dice a PyTorch: "Calcola tu questa dimensione (che sarà 512*8 = 4096)"
+        # -1 dice a PyTorch: "Calcola tu questa dimensione (che sarà 64*16 = 1024)"
         x = x.reshape(x.size(0), x.size(1), -1)
         
-        # Ora x ha dimensioni: (Batch, Time_Ridotto, 4096) ed è pronto per la LSTM
+        # Ora x ha dimensioni: (Batch, Time_Ridotto, 1024) ed è pronto per la LSTM
         
         # 4. Passaggio attraverso la Bi-LSTM
         # La LSTM restituisce l'output e gli stati hidden (che qui non usiamo, quindi _)
