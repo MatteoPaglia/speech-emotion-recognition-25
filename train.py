@@ -19,7 +19,7 @@ Path("checkpoints").mkdir(exist_ok=True)
 
 BATCH_SIZE = 32
 LEARNING_RATE = 0.0001  # Adam lavora bene con 1e-3 o 1e-4
-NUM_EPOCHS = 50
+NUM_EPOCHS = 100
 NUM_CLASSES = 4       # 8 We consider only 4 emotions: Neutral, Happy, Sad, Angry
 TIME_STEPS = 200      # Consider avg or max time steps calculated before 
 MEL_BANDS = 128
@@ -179,7 +179,7 @@ if __name__ == "__main__":
 
     # Ciclo delle Epoche
     best_val_acc = 0.0
-    early_stopping = SimpleEarlyStopping(patience=4)
+    early_stopping = SimpleEarlyStopping(patience=10)
 
     # --- STAMPA IPERPARAMETRI ---
     print("\n" + "="*80)
