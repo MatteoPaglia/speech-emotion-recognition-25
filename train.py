@@ -158,6 +158,13 @@ if __name__ == "__main__":
 
     # Inizializzazione Modello
     model = CRNN_BiLSTM(batch_size=BATCH_SIZE, time_steps=TIME_STEPS).to(DEVICE)
+    
+    # Stampa dell'architettura del modello
+    print("\n" + "="*80)
+    print("🏗️ ARCHITETTURA DEL MODELLO")
+    print("="*80)
+    print(model)
+    print("="*80 + "\n")
 
     # Loss e Optimizer
     # CrossEntropyLoss include già la Softmax internamente!
