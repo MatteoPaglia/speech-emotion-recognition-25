@@ -90,10 +90,10 @@ class CustomRAVDESSDataset(Dataset):
         # SpecAugment per Training (maschera parti dello spettrogramma)
         # Solo per training, non per validation/test
         if self.split == 'train':
-            self.spec_augment = torchaudio.transforms.Compose([
+            self.spec_augment = torch.nn.Sequential(
                 torchaudio.transforms.FrequencyMasking(freq_mask_param=15),  # Maschera 15 freq bin
                 torchaudio.transforms.TimeMasking(time_mask_param=20)        # Maschera 20 time steps
-            ])
+            )
         else:
             self.spec_augment = None
         
