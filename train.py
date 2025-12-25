@@ -18,7 +18,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 Path("checkpoints").mkdir(exist_ok=True)
 
 BATCH_SIZE = 32
-LEARNING_RATE = 0.001  # Adam lavora bene con 1e-3 o 1e-4
+LEARNING_RATE = 0.0001  # Adam lavora bene con 1e-3 o 1e-4
 NUM_EPOCHS = 50
 NUM_CLASSES = 4       # 8 We consider only 4 emotions: Neutral, Happy, Sad, Angry
 TIME_STEPS = 200      # Consider avg or max time steps calculated before 
@@ -162,11 +162,31 @@ if __name__ == "__main__":
     # Loss e Optimizer
     # CrossEntropyLoss include già la Softmax internamente!
     criterion = nn.CrossEntropyLoss() 
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
 
     # Ciclo delle Epoche
     best_val_acc = 0.0
     early_stopping = SimpleEarlyStopping(patience=5)
+
+    # --- STAMPA IPERPARAMETRI ---
+    print("\n" + "="*80)
+    print("🔧 IPERPARAMETRI DI TRAINING")
+    print("="*80)
+    print(f"Device:                {DEVICE}")
+    print(f"Batch Size:            {BATCH_SIZE}")
+    print(f"Learning Rate:         {LEARNING_RATE}")
+    print(f"Weight Decay (L2):     {1e-3}")
+    print(f"Number of Epochs:      {NUM_EPOCHS}")
+    print(f"Early Stopping Patience: {early_stopping.patience}")
+    print(f"\nModello:")
+    print(f"  - Num Classes:       {NUM_CLASSES}")
+    print(f"  - Time Steps:        {TIME_STEPS}")
+    print(f"  - Mel Bands:         {MEL_BANDS}")
+    print(f"\nOptimizer:             Adam")
+    print(f"Loss Function:         CrossEntropyLoss")
+    print(f"Train Samples:         {len(train_RAVDESS_dataset)}")
+    print(f"Val Samples:           {len(val_RAVDESS_dataset)}")
+    print("="*80 + "\n")
 
     for epoch in range(NUM_EPOCHS):
         print(f"\nEpoch {epoch+1}/{NUM_EPOCHS}")

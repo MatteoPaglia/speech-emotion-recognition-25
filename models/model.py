@@ -52,7 +52,7 @@ class CRNN_BiLSTM(nn.Module):
         self.attention_linear = nn.Linear(self.hidden_size * 2, 1)
 
         # Layer di classificazione finale
-        self.dropout = nn.Dropout(0.3)
+        self.dropout = nn.Dropout(0.5)
         self.classifier = nn.Linear(self.hidden_size * 2, self.num_classes)
 
 
