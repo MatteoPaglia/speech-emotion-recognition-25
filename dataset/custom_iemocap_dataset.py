@@ -21,7 +21,7 @@ import librosa
 import numpy as np
 from pathlib import Path
 from torch.utils.data import Dataset
-from utils.get_dataset_statistics import print_dataset_stats
+from utils.get_dataset_statistics import print_iemocap_stats
 
 
 class CustomIEMOCAPDataset(Dataset):
@@ -31,13 +31,15 @@ class CustomIEMOCAPDataset(Dataset):
         'neu': 'neutral',    # Neutral
         'hap': 'happy',      # Happiness
         'sad': 'sad',        # Sadness
-        'ang': 'angry'       # Anger
+        'ang': 'angry',      # Anger
+        'exc': 'happy'       # Excitement became 'happy'
     }
     
     # Mapping per emotion_id (0-indexed, come in RAVDESS)
     EMOTION_ID_MAP = {
         'neu': 0,   # neutral
         'hap': 1,   # happy
+        'exc': 1,   # excitement became happy
         'sad': 2,   # sad
         'ang': 3    # angry
     }
@@ -62,7 +64,7 @@ class CustomIEMOCAPDataset(Dataset):
         self.use_silence_trimming = use_silence_trimming
         self.use_avg_audio = use_avg_audio
         
-        # Audio processing parameters (identici a RAVDESS)
+        # Audio processing parameters 
         self.target_sample_rate = target_sample_rate
         self.n_fft = target_n_fft
         self.hop_length = target_hop_length
@@ -200,15 +202,15 @@ class CustomIEMOCAPDataset(Dataset):
         print(f"📊 Statistiche del dataset IEMOCAP:")
         if self.split == 'train':
             self.samples = train_samples
-            print_dataset_stats(self.samples, name="IEMOCAP TRAINING SET")
+            print_iemocap_stats(self.samples, name="IEMOCAP TRAINING SET")
 
         elif self.split == 'validation':
             self.samples = validation_samples
-            print_dataset_stats(self.samples, name="IEMOCAP VALIDATION SET")    
+            print_iemocap_stats(self.samples, name="IEMOCAP VALIDATION SET")    
           
         elif self.split == 'test':
             self.samples = test_samples
-            print_dataset_stats(self.samples, name="IEMOCAP TEST SET")
+            print_iemocap_stats(self.samples, name="IEMOCAP TEST SET")
         else:
             raise ValueError("Invalid split name. Use 'train', 'validation', or 'test'.")
             
