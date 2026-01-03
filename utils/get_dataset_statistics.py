@@ -1,16 +1,16 @@
 from collections import Counter
 
-def print_ravdess_stats(samples, name="RAVDESS"):
+def print_dataset_stats(samples, name="DATASET"):
     """
-    Stampa report statistico dettagliato per il dataset RAVDESS.
+    Stampa report statistico dettagliato per RAVDESS.
     
     Args:
-        samples: Lista di sample dict (oppure oggetto Dataset con attributo .samples)
+        samples: Lista di sample dict (oppure oggetto Dataset)
         name: Nome del dataset per la stampa
     """
-    print(f"\n{'='*50}")
+    print(f"\n{'='*40}")
     print(f"📊 ANALISI {name.upper()}")
-    print(f"{'='*50}")
+    print(f"{'='*40}")
     
     # Se passa un oggetto Dataset, estrai i samples
     if hasattr(samples, 'samples'):
@@ -24,28 +24,23 @@ def print_ravdess_stats(samples, name="RAVDESS"):
     # Estrazione dati RAVDESS
     actors = set()
     emotions = []
-    sessions = set()
     
     for s in samples:
         try:
             # Struttura RAVDESS: metadata -> actor, emotion_label
             actor = int(s['metadata']['actor'])
             emotion = s['metadata']['emotion_label']
-            session = int(s['metadata']['session'])
             
             actors.add(actor)
             emotions.append(emotion)
-            sessions.add(session)
         except (KeyError, ValueError, TypeError) as e:
-            print(f"⚠️ Errore nel parsing sample RAVDESS: {e}")
             continue
     
-    # Statistiche Attori
+    # Statistiche Attori (Genere)
     males = [a for a in actors if a % 2 == 1]
     females = [a for a in actors if a % 2 == 0]
     
     print(f"🔹 Samples Totali: {total}")
-    print(f"🔹 Sessioni: {sorted(list(sessions))}")
     print(f"🔹 Attori ({len(actors)}): {sorted(list(actors))}")
     print(f"   - Maschi:  {len(males)}")
     print(f"   - Femmine: {len(females)}")
@@ -55,10 +50,13 @@ def print_ravdess_stats(samples, name="RAVDESS"):
     counts = Counter(emotions)
     for emo, count in sorted(counts.items()):
         perc = (count / total) * 100 if total > 0 else 0
+        # Calcolo barra visiva
         bar = "█" * int(perc / 5) 
+        # F-string sicura
         print(f"   - {emo.capitalize():10s}: {count:4d} ({perc:5.1f}%) {bar}")
         
-    print("-" * 50)
+    print("-" * 40)
+
 
 
 def print_iemocap_stats(samples, name="IEMOCAP"):
@@ -182,29 +180,3 @@ def print_iemocap_stats(samples, name="IEMOCAP"):
     print("-" * 60)
 
 
-def print_dataset_stats(samples, name="DATASET"):
-    """
-    Auto-detect dataset type e chiama la funzione appropriata.
-    DEPRECATED: Usare print_ravdess_stats() oppure print_iemocap_stats() direttamente!
-    
-    Args:
-        samples: Lista di sample dict (oppure oggetto Dataset)
-        name: Nome del dataset per la stampa
-    """
-    # Se passa un oggetto Dataset, estrai i samples
-    if hasattr(samples, 'samples'):
-        samples = samples.samples
-    
-    if len(samples) == 0:
-        print("⚠️ Dataset vuoto!")
-        return
-    
-    first_sample = samples[0]
-    
-    # Auto-detect tipo
-    if 'metadata' in first_sample:
-        print_ravdess_stats(samples, name=name)
-    elif 'session_id' in first_sample and 'actor' in first_sample:
-        print_iemocap_stats(samples, name=name)
-    else:
-        print("⚠️ Formato dataset sconosciuto!")

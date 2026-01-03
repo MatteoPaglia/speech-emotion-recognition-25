@@ -20,7 +20,7 @@ import numpy as np
 import random
 from pathlib import Path
 from torch.utils.data import Dataset
-from utils.get_dataset_statistics import print_ravdess_stats
+from utils.get_dataset_statistics import print_dataset_stats
 
 
 class CustomRAVDESSDataset(Dataset):
@@ -208,15 +208,15 @@ class CustomRAVDESSDataset(Dataset):
         # Filtra i samples in base agli attori
         if self.split == 'train':
             self.samples = [s for s in self.samples if int(s['metadata']['actor']) in train_actors]
-            print_ravdess_stats(self.samples, name="RAVDESS TRAINING SET")
+            print_dataset_stats(self.samples, name="RAVDESS TRAINING SET")
             
         elif self.split == 'validation':
             self.samples = [s for s in self.samples if int(s['metadata']['actor']) in validation_actors]
-            print_ravdess_stats(self.samples, name="RAVDESS VALIDATION SET")
+            print_dataset_stats(self.samples, name="RAVDESS VALIDATION SET")
             
         elif self.split == 'test':
             self.samples = [s for s in self.samples if int(s['metadata']['actor']) in test_actors]
-            print_ravdess_stats(self.samples, name="RAVDESS TEST SET")
+            print_dataset_stats(self.samples, name="RAVDESS TEST SET")
             
             
         else:
