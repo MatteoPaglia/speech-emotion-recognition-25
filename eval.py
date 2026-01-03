@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
+import wandb
 
 from dataset.custom_ravdess_dataset import CustomRAVDESSDataset
 from models.model import CRNN_BiLSTM
@@ -107,36 +108,12 @@ def print_metrics(predictions, true_labels):
     
     return accuracy, macro_f1, weighted_f1
 
-# --- FUNZIONE PER SALVARE METRICHE ---
-def save_metrics_to_file(accuracy, macro_f1, weighted_f1, timestamp):
-    """Salva le metriche in file di testo"""
-    Path("results").mkdir(exist_ok=True)
-    
-    metrics_path = f"results/metrics_{timestamp}.txt"
-    
-    with open(metrics_path, 'w') as f:
-        f.write("="*80 + "\n")
-        f.write("📊 METRICHE DI VALUTAZIONE - RAVDESS TEST SET\n")
-        f.write("="*80 + "\n\n")
-        f.write(f"Data e ora valutazione: {timestamp}\n\n")
-        f.write(f"Accuracy:           {accuracy*100:.2f}%\n")
-        f.write(f"Macro-Avg F1:       {macro_f1:.4f}\n")
-        f.write(f"Weighted-Avg F1:    {weighted_f1:.4f}\n")
-        f.write("="*80 + "\n")
-    
-    print(f"✅ Metriche salvate: {metrics_path}")
-
 # --- FUNZIONE PER CONFUSION MATRIX ---
-def plot_confusion_matrix(predictions, true_labels, timestamp):
-    """Plotta e salva la confusion matrix"""
+def plot_confusion_matrix(predictions, true_labels):
+    """Crea e restituisce la figura della confusion matrix"""
     cm = confusion_matrix(true_labels, predictions)
     
-    # Crea directory results se non esiste
-    Path("results").mkdir(exist_ok=True)
-    
-    save_path = f"results/confusion_matrix_{timestamp}.png"
-    
-    plt.figure(figsize=(10, 8))
+    fig = plt.figure(figsize=(10, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
                 xticklabels=EMOTION_LABELS, 
                 yticklabels=EMOTION_LABELS,
@@ -145,9 +122,8 @@ def plot_confusion_matrix(predictions, true_labels, timestamp):
     plt.ylabel('True Label')
     plt.title('Confusion Matrix - RAVDESS Test Set')
     plt.tight_layout()
-    plt.savefig(save_path)
-    print(f"\n✅ Confusion matrix salvata: {save_path}")
-    plt.show()
+    
+    return fig
 
 # --- MAIN ---
 if __name__ == "__main__":
@@ -155,6 +131,22 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     print(f"Using device: {DEVICE}\n")
     print(f"Timestamp valutazione: {timestamp}\n")
+    
+    # Inizializza W&B per evaluation
+    wandb.init(
+        project="speech-emotion-recognition",
+        name=f"eval_{timestamp}",
+        config={
+            "batch_size": BATCH_SIZE,
+            "num_classes": NUM_CLASSES,
+            "time_steps": TIME_STEPS,
+            "mel_bands": MEL_BANDS,
+            "model_path": MODEL_PATH,
+            "dataset": "RAVDESS",
+            "split": "test",
+            "device": str(DEVICE)
+        }
+    )
     
     # 1. Ricerca dataset
     ravdess_path = find_dataset_paths()
@@ -189,16 +181,39 @@ if __name__ == "__main__":
     # 5. Metriche
     accuracy, macro_f1, weighted_f1 = print_metrics(predictions, true_labels)
     
-    # 6. Salva metriche su file
-    save_metrics_to_file(accuracy, macro_f1, weighted_f1, timestamp)
+    # 6. Crea Confusion Matrix
+    cm_fig = plot_confusion_matrix(predictions, true_labels)
     
-    # 7. Confusion Matrix
-    plot_confusion_matrix(predictions, true_labels, timestamp)
+    # 7. Log su W&B
+    wandb.log({
+        "test_accuracy": accuracy,
+        "test_macro_f1": macro_f1,
+        "test_weighted_f1": weighted_f1,
+        "confusion_matrix": wandb.Image(cm_fig)
+    })
+    
+    # Log classification report come tabella
+    from sklearn.metrics import precision_recall_fscore_support
+    precision, recall, f1, support = precision_recall_fscore_support(
+        true_labels, predictions, labels=range(NUM_CLASSES), zero_division=0
+    )
+    
+    class_metrics = wandb.Table(
+        columns=["Emotion", "Precision", "Recall", "F1-Score", "Support"],
+        data=[[EMOTION_LABELS[i], precision[i], recall[i], f1[i], support[i]] 
+              for i in range(NUM_CLASSES)]
+    )
+    wandb.log({"classification_report": class_metrics})
+    
+    plt.show()
     
     print("\n" + "="*80)
     print("✅ Evaluation Complete!")
     print(f"   Final Accuracy: {accuracy*100:.2f}%")
     print(f"   Macro-Avg F1:   {macro_f1:.4f}")
     print(f"   Weighted-Avg F1: {weighted_f1:.4f}")
-    print(f"   Risultati salvati in: results/ con timestamp {timestamp}")
+    print(f"   Risultati loggati su W&B")
     print("="*80)
+    
+    # Chiudi W&B
+    wandb.finish()
