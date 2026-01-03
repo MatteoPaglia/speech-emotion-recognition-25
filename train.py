@@ -6,6 +6,7 @@ from tqdm import tqdm
 from pathlib import Path
 import os
 from torch.utils.data import DataLoader
+import wandb
 
 from dataset.custom_ravdess_dataset import CustomRAVDESSDataset
 from models.model import CRNN_BiLSTM 
@@ -181,6 +182,26 @@ if __name__ == "__main__":
     best_val_acc = 0.0
     early_stopping = SimpleEarlyStopping(patience=10)
 
+    # --- INIZIALIZZA WANDB ---
+    wandb.init(
+        project="speech-emotion-recognition",
+        config={
+            "learning_rate": LEARNING_RATE,
+            "batch_size": BATCH_SIZE,
+            "epochs": NUM_EPOCHS,
+            "num_classes": NUM_CLASSES,
+            "time_steps": TIME_STEPS,
+            "mel_bands": MEL_BANDS,
+            "architecture": "CRNN_BiLSTM",
+            "dataset": "RAVDESS",
+            "optimizer": "Adam",
+            "weight_decay": 1e-3,
+            "early_stopping_patience": early_stopping.patience,
+            "label_smoothing": 0.1,
+            "device": str(DEVICE)
+        }
+    )
+
     # --- STAMPA IPERPARAMETRI ---
     print("\n" + "="*80)
     print("🔧 IPERPARAMETRI DI TRAINING")
@@ -213,6 +234,15 @@ if __name__ == "__main__":
         print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%")
         print(f"Val Loss:   {val_loss:.4f} | Val Acc:   {val_acc:.2f}%")
 
+        # Log metriche su W&B
+        wandb.log({
+            "epoch": epoch + 1,
+            "train_loss": train_loss,
+            "train_accuracy": train_acc,
+            "val_loss": val_loss,
+            "val_accuracy": val_acc
+        })
+
         # Checkpoint: Salva il modello se è il migliore finora
         if val_acc > best_val_acc:
             best_val_acc = val_acc
@@ -230,3 +260,6 @@ if __name__ == "__main__":
     print("✅ Training Complete!")
     print(f"Best Validation Accuracy: {best_val_acc:.2f}%")
     print("="*80)
+
+    # Chiudi W&B
+    wandb.finish()

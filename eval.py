@@ -7,6 +7,7 @@ from sklearn.metrics import confusion_matrix, classification_report, accuracy_sc
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from datetime import datetime
 
 from dataset.custom_ravdess_dataset import CustomRAVDESSDataset
 from models.model import CRNN_BiLSTM
@@ -106,10 +107,34 @@ def print_metrics(predictions, true_labels):
     
     return accuracy, macro_f1, weighted_f1
 
+# --- FUNZIONE PER SALVARE METRICHE ---
+def save_metrics_to_file(accuracy, macro_f1, weighted_f1, timestamp):
+    """Salva le metriche in file di testo"""
+    Path("results").mkdir(exist_ok=True)
+    
+    metrics_path = f"results/metrics_{timestamp}.txt"
+    
+    with open(metrics_path, 'w') as f:
+        f.write("="*80 + "\n")
+        f.write("📊 METRICHE DI VALUTAZIONE - RAVDESS TEST SET\n")
+        f.write("="*80 + "\n\n")
+        f.write(f"Data e ora valutazione: {timestamp}\n\n")
+        f.write(f"Accuracy:           {accuracy*100:.2f}%\n")
+        f.write(f"Macro-Avg F1:       {macro_f1:.4f}\n")
+        f.write(f"Weighted-Avg F1:    {weighted_f1:.4f}\n")
+        f.write("="*80 + "\n")
+    
+    print(f"✅ Metriche salvate: {metrics_path}")
+
 # --- FUNZIONE PER CONFUSION MATRIX ---
-def plot_confusion_matrix(predictions, true_labels, save_path="confusion_matrix.png"):
+def plot_confusion_matrix(predictions, true_labels, timestamp):
     """Plotta e salva la confusion matrix"""
     cm = confusion_matrix(true_labels, predictions)
+    
+    # Crea directory results se non esiste
+    Path("results").mkdir(exist_ok=True)
+    
+    save_path = f"results/confusion_matrix_{timestamp}.png"
     
     plt.figure(figsize=(10, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
@@ -126,7 +151,10 @@ def plot_confusion_matrix(predictions, true_labels, save_path="confusion_matrix.
 
 # --- MAIN ---
 if __name__ == "__main__":
+    # Genera timestamp per i file di output
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     print(f"Using device: {DEVICE}\n")
+    print(f"Timestamp valutazione: {timestamp}\n")
     
     # 1. Ricerca dataset
     ravdess_path = find_dataset_paths()
@@ -161,12 +189,16 @@ if __name__ == "__main__":
     # 5. Metriche
     accuracy, macro_f1, weighted_f1 = print_metrics(predictions, true_labels)
     
-    # 6. Confusion Matrix
-    plot_confusion_matrix(predictions, true_labels)
+    # 6. Salva metriche su file
+    save_metrics_to_file(accuracy, macro_f1, weighted_f1, timestamp)
+    
+    # 7. Confusion Matrix
+    plot_confusion_matrix(predictions, true_labels, timestamp)
     
     print("\n" + "="*80)
     print("✅ Evaluation Complete!")
     print(f"   Final Accuracy: {accuracy*100:.2f}%")
     print(f"   Macro-Avg F1:   {macro_f1:.4f}")
     print(f"   Weighted-Avg F1: {weighted_f1:.4f}")
+    print(f"   Risultati salvati in: results/ con timestamp {timestamp}")
     print("="*80)
