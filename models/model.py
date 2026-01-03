@@ -32,15 +32,15 @@ class CRNN_BiLSTM(nn.Module):
         )
 
         # Calcolo dimensione feature per la LSTM:
-        # Dopo 3 MaxPool (2x2), l'altezza (frequenza) diventa 128 / 8 = 16.
-        # I canali sono diventati 64.
-        # Quindi ogni step temporale avrà un vettore di: 64 * 16 = 1024 feature.
-        self.lstm_input_size = 64 * 16
+        # Dopo 4 MaxPool (2x2), l'altezza (frequenza) diventa 128 / 16 = 8.
+        # I canali sono diventati 1024.
+        # Quindi ogni step temporale avrà un vettore di: 1024 * 8 = 8192 feature.
+        self.lstm_input_size = 1024 * 8
         self.hidden_size = 128
         self.num_classes = 4  # Ho solo 4 classi di emozioni (Neutral, Happy, Sad, Angry)
 
         # Projection Layer per ridurre gradualmente le dimensioni (evita collo di bottiglia)
-        # Riduciamo da 1024 -> 128 con una densa prima della LSTM
+        # Riduciamo da 8192 -> 128 con una densa prima della LSTM
         self.projection = nn.Linear(self.lstm_input_size, self.hidden_size)
 
         # Bi-LSTM
@@ -69,24 +69,24 @@ class CRNN_BiLSTM(nn.Module):
         x = self.block1(x)
         x = self.block2(x)
         x = self.block3(x)
-        #x = self.block4(x)
+        x = self.block4(x)
         
-        # A questo punto x ha dimensioni: (Batch, 64, 16, Time_Ridotto)
+        # A questo punto x ha dimensioni: (Batch, 1024, 8, Time_Ridotto)
         
         # 2. Permutazione delle dimensioni
         # La LSTM vuole il Tempo come seconda dimensione.
-        # Spostiamo le dimensioni: (Batch, Time_Ridotto, 64, 16)
+        # Spostiamo le dimensioni: (Batch, Time_Ridotto, 1024, 8)
         x = x.permute(0, 3, 1, 2)
         
         # 3. LA RESHAPE VERA E PROPRIA
         # Fondiamo le ultime due dimensioni (Canali e Frequenza) in una sola (Feature)
-        # -1 dice a PyTorch: "Calcola tu questa dimensione (che sarà 64*16 = 1024)"
+        # -1 dice a PyTorch: "Calcola tu questa dimensione (che sarà 1024*8 = 8192)"
         x = x.reshape(x.size(0), x.size(1), -1)
         
-        # Ora x ha dimensioni: (Batch, Time_Ridotto, 1024) ed è pronto per il projection
+        # Ora x ha dimensioni: (Batch, Time_Ridotto, 8192) ed è pronto per il projection
         
         # 3.5. Passaggio nel projection layer + attivazione
-        # Riduciamo da 1024 -> 128 gradualmente per evitare collo di bottiglia
+        # Riduciamo da 8192 -> 128 gradualmente per evitare collo di bottiglia
         x = self.projection(x)
         x = torch.relu(x)  # Non-linearità per la rappresentazione
         # Ora x è (Batch, Time_Ridotto, 128), molto più digeribile per la LSTM
