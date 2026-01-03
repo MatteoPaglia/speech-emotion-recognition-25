@@ -7,7 +7,7 @@ from sklearn.metrics import confusion_matrix, classification_report, accuracy_sc
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from datetime import datetime
+from datetime import datetime, timedelta
 import wandb
 
 from dataset.custom_ravdess_dataset import CustomRAVDESSDataset
@@ -127,8 +127,8 @@ def plot_confusion_matrix(predictions, true_labels):
 
 # --- MAIN ---
 if __name__ == "__main__":
-    # Genera timestamp per i file di output
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Genera timestamp per i file di output (ora italiana UTC+1)
+    timestamp = (datetime.now() + timedelta(hours=1)).strftime("%Y%m%d_%H%M%S")
     print(f"Using device: {DEVICE}\n")
     print(f"Timestamp valutazione: {timestamp}\n")
     

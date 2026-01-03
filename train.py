@@ -6,6 +6,7 @@ from tqdm import tqdm
 from pathlib import Path
 import os
 from torch.utils.data import DataLoader
+from datetime import datetime, timedelta
 import wandb
 
 from dataset.custom_ravdess_dataset import CustomRAVDESSDataset
@@ -182,9 +183,13 @@ if __name__ == "__main__":
     best_val_acc = 0.0
     early_stopping = SimpleEarlyStopping(patience=10)
 
+    # Genera timestamp per il run (ora italiana UTC+1)
+    timestamp = (datetime.now() + timedelta(hours=1)).strftime("%Y%m%d_%H%M%S")
+
     # --- INIZIALIZZA WANDB ---
     wandb.init(
         project="speech-emotion-recognition",
+        name=f"train_{timestamp}",
         config={
             "learning_rate": LEARNING_RATE,
             "batch_size": BATCH_SIZE,
