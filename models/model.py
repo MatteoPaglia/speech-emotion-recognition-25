@@ -6,30 +6,30 @@ class CRNN_BiLSTM(nn.Module):
         super().__init__()
         
         self.block1 = nn.Sequential(
-            nn.Conv2d(channel, 16, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
-            nn.BatchNorm2d(16),
+            nn.Conv2d(channel, 128, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
         )
         self.block2 = nn.Sequential(
-            nn.Conv2d(16, 32, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(128, 256, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
+            nn.BatchNorm2d(256),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
         )
         self.block3 = nn.Sequential(
-            nn.Conv2d(32, 64, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(256, 512, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
+            nn.BatchNorm2d(512),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
         )
         
-        # self.block4 = nn.Sequential(
-        #     nn.Conv2d(256, 512, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
-        #     nn.BatchNorm2d(512),
-        #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
-        # )
+        self.block4 = nn.Sequential(
+             nn.Conv2d(512, 1024, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
+             nn.BatchNorm2d(1024),
+             nn.ReLU(),
+             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+        )
 
         # Calcolo dimensione feature per la LSTM:
         # Dopo 3 MaxPool (2x2), l'altezza (frequenza) diventa 128 / 8 = 16.
