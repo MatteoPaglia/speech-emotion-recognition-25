@@ -1,6 +1,57 @@
 import os
 import shutil
 import kagglehub
+from pathlib import Path
+
+# --- CONFIGURAZIONE PERCORSI CACHE ---
+def get_kaggle_cache_dir():
+    """
+    Ritorna il percorso standard della cache di kagglehub.
+    Funziona su Windows, Linux, e macOS.
+    
+    Returns:
+        Path: Percorso della cache di kagglehub
+    """
+    return Path.home() / '.cache' / 'kagglehub' / 'datasets'
+
+
+def get_dataset_path(dataset_name):
+    """
+    Ritorna il percorso standardizzato di un dataset nella cache kagglehub.
+    Garantisce un percorso consistente indipendentemente dal contesto di esecuzione.
+    
+    Args:
+        dataset_name (str): Nome del dataset ('ravdess' o 'iemocap')
+        
+    Returns:
+        Path: Percorso assoluto del dataset nella cache
+    """
+    dataset_mapping = {
+        'ravdess': 'ravdess-emotional-speech-audio',
+        'iemocap': 'iemocapfullrelease'
+    }
+    
+    if dataset_name.lower() not in dataset_mapping:
+        raise ValueError(f"Dataset sconosciuto: {dataset_name}")
+    
+    cache_dir = get_kaggle_cache_dir()
+    dataset_folder = dataset_mapping[dataset_name.lower()]
+    
+    # La cache di kagglehub ha struttura:
+    # ~/.cache/kagglehub/datasets/<username>/<dataset_slug>/<version>/
+    # Cerchiamo il primo match
+    if cache_dir.exists():
+        for user_dir in cache_dir.iterdir():
+            if user_dir.is_dir():
+                for dataset_dir in user_dir.iterdir():
+                    if dataset_dir.is_dir() and dataset_folder in dataset_dir.name:
+                        # Ritorna la cartella che contiene i dati effettivi
+                        versions = list(dataset_dir.glob('*/'))
+                        if versions:
+                            return versions[0]  # Prendi la prima versione
+    
+    return None
+
 
 def setup_kaggle():
     """
