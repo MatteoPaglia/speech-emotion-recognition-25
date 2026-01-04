@@ -124,7 +124,7 @@ if __name__ == "__main__":
     print(f"Dataset: IEMOCAP\n")
     
     # 1. Ricerca dataset
-    dataset_path = find_dataset_path()
+    dataset_path = "/root/.cache/kagglehub/datasets/dejolilandry/iemocapfullrelease/versions/1/IEMOCAP_full_release"#find_dataset_path()
     print(f"✅ IEMOCAP trovato: {dataset_path}\n")
     
     # 2. Carica dataset TEST
