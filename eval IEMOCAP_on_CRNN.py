@@ -72,6 +72,10 @@ def test_model(model, loader, device):
     
     with torch.no_grad():
         for batch in loader:
+            # Skip batch vuoti (None)
+            if batch is None:
+                continue
+            
             data = batch['audio_features'].to(device)
             targets = batch['emotion_id'].to(device)
             

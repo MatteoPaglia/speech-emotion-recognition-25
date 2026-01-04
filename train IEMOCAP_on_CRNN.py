@@ -93,6 +93,10 @@ def collate_fn_skip_none(batch):
     loop = tqdm(loader, desc="Training", leave=False)
     
     for batch in loop:
+        # Skip batch vuoti (None) che ritorna il collate_fn quando filtra tutti i None
+        if batch is None:
+            continue
+        
         data = batch['audio_features'].to(device)  # Sposta i dati sulla GPU
         targets = batch['emotion_id'].to(device)   # Sposta le etichette sulla GPU
 
@@ -127,6 +131,10 @@ def validate(model, loader, criterion, device):
 
     with torch.no_grad(): # Niente gradienti in validazione (risparmia memoria)
         for batch in loader:
+            # Skip batch vuoti (None)
+            if batch is None:
+                continue
+            
             data = batch['audio_features'].to(device)
             targets = batch['emotion_id'].to(device)
 
