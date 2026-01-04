@@ -11,6 +11,7 @@ import seaborn as sns
 from dataset.custom_iemocap_dataset import CustomIEMOCAPDataset
 from models.model import CRNN_BiLSTM
 from utils.dataset_utils import find_dataset_in_cache, validate_dataset
+from utils.filtered_dataset import FilteredDatasetWrapper
 
 # --- CONFIGURAZIONE ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -38,23 +39,6 @@ def find_dataset_path():
     
     return dataset_path
 
-# --- CUSTOM COLLATE FUNCTION ---
-def collate_fn_skip_none(batch):
-    """
-    Custom collate function che filtra i None dal batch.
-    Usato per skippare i campioni che non riescono a caricarsi.
-    """
-    # Filtra i None dal batch
-    batch = [item for item in batch if item is not None]
-    
-    # Se il batch è vuoto dopo il filtro, ritorna un batch vuoto o un placeholder
-    if len(batch) == 0:
-        return None
-    
-    # Usa il default collate per i campioni rimanenti
-    from torch.utils.data._utils.collate import default_collate
-    return default_collate(batch)
-
 # --- FUNZIONE DI TESTING ---
 def test_model(model, loader, device):
     """
@@ -72,12 +56,8 @@ def test_model(model, loader, device):
     
     with torch.no_grad():
         for batch in loader:
-            # Skip batch vuoti (None)
-            if batch is None:
-                continue
-            
-            data = batch['audio_features'].to(device)
-            targets = batch['emotion_id'].to(device)
+            data = batch['mel_spectrogram'].to(device)
+            targets = batch['label'].to(device)
             
             scores = model(data)
             probs = torch.softmax(scores, dim=1)
@@ -150,8 +130,9 @@ if __name__ == "__main__":
     
     # 2. Carica dataset TEST
     print("Loading IEMOCAP test set...")
-    test_dataset = CustomIEMOCAPDataset(dataset_root=str(dataset_path), split='test')
-    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_fn_skip_none)
+    test_dataset_raw = CustomIEMOCAPDataset(dataset_root=str(dataset_path), split='test')
+    test_dataset = FilteredDatasetWrapper(test_dataset_raw)
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
     
     print(f"✅ Test samples: {len(test_dataset)}\n")
     

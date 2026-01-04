@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from dataset.custom_iemocap_dataset import CustomIEMOCAPDataset
 from models.model import CRNN_BiLSTM
 from utils.dataset_utils import find_dataset_in_cache, validate_dataset
+from utils.filtered_dataset import FilteredDatasetWrapper
 
 # --- 1. CONFIGURAZIONE (IPERPARAMETRI) ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -67,24 +68,8 @@ def find_dataset_path():
     
     return dataset_path
 
-# --- 4. CUSTOM COLLATE FUNCTION ---
-def collate_fn_skip_none(batch):
-    """
-    Custom collate function che filtra i None dal batch.
-    Usato per skippare i campioni che non riescono a caricarsi.
-    """
-    # Filtra i None dal batch
-    batch = [item for item in batch if item is not None]
-    
-    # Se il batch è vuoto dopo il filtro, ritorna un batch vuoto o un placeholder
-    if len(batch) == 0:
-        return None
-    
-    # Usa il default collate per i campioni rimanenti
-    from torch.utils.data._utils.collate import default_collate
-    return default_collate(batch)
-
-# --- 5. FUNZIONE DI VALIDATION ---
+# --- 4. FUNZIONE DI TRAINING ---
+def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()  
     running_loss = 0.0
     correct = 0
@@ -93,12 +78,8 @@ def collate_fn_skip_none(batch):
     loop = tqdm(loader, desc="Training", leave=False)
     
     for batch in loop:
-        # Skip batch vuoti (None) che ritorna il collate_fn quando filtra tutti i None
-        if batch is None:
-            continue
-        
-        data = batch['audio_features'].to(device)  # Sposta i dati sulla GPU
-        targets = batch['emotion_id'].to(device)   # Sposta le etichette sulla GPU
+        data = batch['mel_spectrogram'].to(device)  # Sposta i dati sulla GPU
+        targets = batch['label'].to(device)   # Sposta le etichette sulla GPU
 
         # 1. Forward Pass
         scores = model(data)         # Output shape: (Batch, Num_Classes)
@@ -131,12 +112,8 @@ def validate(model, loader, criterion, device):
 
     with torch.no_grad(): # Niente gradienti in validazione (risparmia memoria)
         for batch in loader:
-            # Skip batch vuoti (None)
-            if batch is None:
-                continue
-            
-            data = batch['audio_features'].to(device)
-            targets = batch['emotion_id'].to(device)
+            data = batch['mel_spectrogram'].to(device)
+            targets = batch['label'].to(device)
 
             scores = model(data)
             loss = criterion(scores, targets)
@@ -161,16 +138,20 @@ if __name__ == "__main__":
     
     # Caricamento IEMOCAP dataset
     print("📊 Caricamento IEMOCAP dataset...")
-    train_dataset = CustomIEMOCAPDataset(dataset_root=str(dataset_path), split='train')
-    val_dataset = CustomIEMOCAPDataset(dataset_root=str(dataset_path), split='validation')
+    train_dataset_raw = CustomIEMOCAPDataset(dataset_root=str(dataset_path), split='train')
+    val_dataset_raw = CustomIEMOCAPDataset(dataset_root=str(dataset_path), split='validation')
+    
+    # Wrap i dataset con FilteredDatasetWrapper per filtrare campioni corrotti
+    train_dataset = FilteredDatasetWrapper(train_dataset_raw)
+    val_dataset = FilteredDatasetWrapper(val_dataset_raw)
     checkpoint_name = "best_model_iemocap.pth"
     
     print(f"Train samples: {len(train_dataset)}")
     print(f"Val samples: {len(val_dataset)}")
     
-    # Create DataLoaders con collate_fn personalizzato per filtrare None
-    train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_fn_skip_none)
-    val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_fn_skip_none)
+    # Create DataLoaders
+    train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     # Inizializzazione Modello
     model = CRNN_BiLSTM(batch_size=BATCH_SIZE, time_steps=TIME_STEPS).to(DEVICE)

@@ -353,14 +353,14 @@ class CustomIEMOCAPDataset(Dataset):
             
             # 5. Return dictionary
             return {
-                'audio_features': log_mel_spec,                              # Tensor [1, 128, T]
-                'emotion_id': emotion_id if self.split != 'train' else -1,  # -1 = no label for train
-                'emotion': emotion_label if self.split != 'train' else None, # None for train
-                'actor_id': speaker_id                                       # Str: 'M' o 'F'
+                'mel_spectrogram': log_mel_spec,       # Tensor [1, 128, T]
+                'label': emotion_id,                    # Class ID (0-3)
+                'emotion': emotion_label,               # Emotion name
+                'actor_id': speaker_id                  # Str: 'M' o 'F'
             }
         
         except Exception as e:
             print(f"⚠️  Errore caricamento file {audio_path}: {e}")
-            # Ritorna None per segnalare errore - verrà filtrato dal DataLoader
+            # Ritorna None per segnalare errore - verrà filtrato dal FilteredDatasetWrapper
             return None
 
