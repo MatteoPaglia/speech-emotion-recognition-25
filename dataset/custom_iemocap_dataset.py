@@ -326,35 +326,41 @@ class CustomIEMOCAPDataset(Dataset):
         if emotion_label is None or emotion_id is None:
             raise ValueError(f"Invalid emotion label: {label}. Only {list(self.EMOTION_DICT.keys())} are supported.")
         
-        # 1. Load Audio
-        waveform, sample_rate = torchaudio.load(str(audio_path))
-        
-        # Resample
-        if sample_rate != self.target_sample_rate:
-            resampler = torchaudio.transforms.Resample(sample_rate, self.target_sample_rate)
-            waveform = resampler(waveform)
+        try:
+            # 1. Load Audio
+            waveform, sample_rate = torchaudio.load(str(audio_path))
             
-        # Mono check
-        if waveform.shape[0] > 1:
-            waveform = torch.mean(waveform, dim=0, keepdim=True)
+            # Resample
+            if sample_rate != self.target_sample_rate:
+                resampler = torchaudio.transforms.Resample(sample_rate, self.target_sample_rate)
+                waveform = resampler(waveform)
+                
+            # Mono check
+            if waveform.shape[0] > 1:
+                waveform = torch.mean(waveform, dim=0, keepdim=True)
+            
+            # 2. Process Waveform (trim silenzio + center crop/padding)
+            waveform = self._process_waveform(waveform)
+            
+            # 3. Mel Spectrogram
+            mel_spec = self.mel_transform(waveform)
+            log_mel_spec = self.db_transform(mel_spec)
+            
+            # 4. Normalization (Z-score)
+            mean = log_mel_spec.mean()
+            std = log_mel_spec.std()
+            log_mel_spec = (log_mel_spec - mean) / (std + 1e-6)
+            
+            # 5. Return dictionary
+            return {
+                'audio_features': log_mel_spec,                              # Tensor [1, 128, T]
+                'emotion_id': emotion_id if self.split != 'train' else -1,  # -1 = no label for train
+                'emotion': emotion_label if self.split != 'train' else None, # None for train
+                'actor_id': speaker_id                                       # Str: 'M' o 'F'
+            }
         
-        # 2. Process Waveform (trim silenzio + center crop/padding)
-        waveform = self._process_waveform(waveform)
-        
-        # 3. Mel Spectrogram
-        mel_spec = self.mel_transform(waveform)
-        log_mel_spec = self.db_transform(mel_spec)
-        
-        # 4. Normalization (Z-score)
-        mean = log_mel_spec.mean()
-        std = log_mel_spec.std()
-        log_mel_spec = (log_mel_spec - mean) / (std + 1e-6)
-        
-        # 5. Return dictionary - train set unsupervised (no labels)
-        return {
-            'audio_features': log_mel_spec,                              # Tensor [1, 128, T]
-            'emotion_id': emotion_id if self.split != 'train' else -1,  # -1 = no label for train
-            'emotion': emotion_label if self.split != 'train' else None, # None for train
-            'actor_id': speaker_id                                       # Str: 'M' o 'F'
-        }
+        except Exception as e:
+            print(f"⚠️  Errore caricamento file {audio_path}: {e}")
+            # Ritorna None per segnalare errore - verrà filtrato dal DataLoader
+            return None
 
