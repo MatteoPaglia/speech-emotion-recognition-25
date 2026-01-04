@@ -56,8 +56,15 @@ def test_model(model, loader, device):
     
     with torch.no_grad():
         for batch in loader:
-            data = batch['mel_spectrogram'].to(device)
-            targets = batch['label'].to(device)
+            # Assicurati che le chiavi siano corrette
+            if isinstance(batch, dict):
+                data = batch['mel_spectrogram'].to(device)
+                targets = batch['label'].to(device)
+            else:
+                # Fallback se il batch è una tupla
+                data, targets = batch
+                data = data.to(device)
+                targets = targets.to(device)
             
             scores = model(data)
             probs = torch.softmax(scores, dim=1)

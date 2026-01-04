@@ -78,8 +78,15 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
     loop = tqdm(loader, desc="Training", leave=False)
     
     for batch in loop:
-        data = batch['mel_spectrogram'].to(device)  # Sposta i dati sulla GPU
-        targets = batch['label'].to(device)   # Sposta le etichette sulla GPU
+        # Assicurati che le chiavi siano corrette
+        if isinstance(batch, dict):
+            data = batch['mel_spectrogram'].to(device)
+            targets = batch['label'].to(device)
+        else:
+            # Fallback se il batch è una tupla
+            data, targets = batch
+            data = data.to(device)
+            targets = targets.to(device)
 
         # 1. Forward Pass
         scores = model(data)         # Output shape: (Batch, Num_Classes)
@@ -112,8 +119,15 @@ def validate(model, loader, criterion, device):
 
     with torch.no_grad(): # Niente gradienti in validazione (risparmia memoria)
         for batch in loader:
-            data = batch['mel_spectrogram'].to(device)
-            targets = batch['label'].to(device)
+            # Assicurati che le chiavi siano corrette
+            if isinstance(batch, dict):
+                data = batch['mel_spectrogram'].to(device)
+                targets = batch['label'].to(device)
+            else:
+                # Fallback se il batch è una tupla
+                data, targets = batch
+                data = data.to(device)
+                targets = targets.to(device)
 
             scores = model(data)
             loss = criterion(scores, targets)
