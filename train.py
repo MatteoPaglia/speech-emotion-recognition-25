@@ -184,8 +184,7 @@ if __name__ == "__main__":
         optimizer, 
         mode='min', 
         factor=0.5,     # Dimezza il LR
-        patience=3,     # Se non migliora per 3 epoche
-        verbose=True
+        patience=3      # Se non migliora per 3 epoche
     )
 
     # Ciclo delle Epoche
