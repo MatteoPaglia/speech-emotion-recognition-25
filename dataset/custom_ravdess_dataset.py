@@ -90,9 +90,12 @@ class CustomRAVDESSDataset(Dataset):
         # SpecAugment per Training (maschera parti dello spettrogramma)
         # Solo per training, non per validation/test
         if self.split == 'train':
+            # STRATEGIA AGGRESSIVA: Doppia maschera per costringere il modello a generalizzare
             self.spec_augment = torch.nn.Sequential(
-                torchaudio.transforms.FrequencyMasking(freq_mask_param=15),  # Maschera 15 freq bin
-                torchaudio.transforms.TimeMasking(time_mask_param=20)        # Maschera 20 time steps
+                torchaudio.transforms.FrequencyMasking(freq_mask_param=20),
+                torchaudio.transforms.FrequencyMasking(freq_mask_param=20), # Seconda maschera freq
+                torchaudio.transforms.TimeMasking(time_mask_param=30),
+                torchaudio.transforms.TimeMasking(time_mask_param=30)       # Seconda maschera time
             )
         else:
             self.spec_augment = None

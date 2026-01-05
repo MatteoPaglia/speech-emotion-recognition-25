@@ -179,6 +179,15 @@ if __name__ == "__main__":
     
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
 
+    # AGGIUNTA: Scheduler per ridurre il LR quando la loss si appiattisce
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='min', 
+        factor=0.5,     # Dimezza il LR
+        patience=3,     # Se non migliora per 3 epoche
+        verbose=True
+    )
+
     # Ciclo delle Epoche
     best_val_acc = 0.0
     early_stopping = SimpleEarlyStopping(patience=10)
@@ -238,6 +247,9 @@ if __name__ == "__main__":
 
         print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%")
         print(f"Val Loss:   {val_loss:.4f} | Val Acc:   {val_acc:.2f}%")
+
+        # AGGIUNTA: Step dello scheduler
+        scheduler.step(val_loss)
 
         # Log metriche su W&B
         wandb.log({
