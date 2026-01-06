@@ -20,7 +20,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 Path("checkpoints").mkdir(exist_ok=True)
 
 BATCH_SIZE = 32
-LEARNING_RATE = 0.0001  # Adam lavora bene con 1e-3 o 1e-4
+LEARNING_RATE = 0.0005  # Adam lavora bene con 1e-3 o 1e-4
 NUM_EPOCHS = 100
 NUM_CLASSES = 4       # We consider only 4 emotions: Neutral, Happy, Sad, Angry
 TIME_STEPS = 200      # Consider avg or max time steps calculated before 
@@ -177,7 +177,7 @@ if __name__ == "__main__":
 
     criterion = nn.CrossEntropyLoss(weight=class_weights,label_smoothing=0.1)
     
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 
     # AGGIUNTA: Scheduler per ridurre il LR quando la loss si appiattisce
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
