@@ -66,6 +66,38 @@ def save_swa_checkpoint(swa_model, path):
     unwrapped_state_dict = swa_model.module.state_dict()
     torch.save(unwrapped_state_dict, path)
 
+def update_bn_custom(loader, model, device):
+    """
+    Wrapper per update_bn che gestisce il formato custom del nostro dataloader.
+    Il nostro loader restituisce dizionari {'audio_features': tensor, ...}
+    mentre update_bn si aspetta direttamente i tensori.
+    """
+    model.train()
+    momenta = {}
+    for module in model.modules():
+        if isinstance(module, torch.nn.modules.batchnorm._BatchNorm):
+            module.running_mean = torch.zeros_like(module.running_mean)
+            module.running_var = torch.ones_like(module.running_var)
+            momenta[module] = module.momentum
+    
+    if not momenta:
+        return
+    
+    was_training = model.training
+    model.train()
+    for module in momenta.keys():
+        module.momentum = None
+        module.num_batches_tracked *= 0
+    
+    for batch in loader:
+        # Estrai il tensore audio dal dizionario
+        inputs = batch['audio_features'].to(device)
+        model(inputs)
+    
+    for bn_module in momenta.keys():
+        bn_module.momentum = momenta[bn_module]
+    model.train(was_training)
+
 # --- 4. RICERCA PERCORSI DATASET ---
 def find_dataset_paths():
     """Ricerca i percorsi dei dataset"""
@@ -284,7 +316,7 @@ if __name__ == "__main__":
             if (epoch + 1) % 5 == 0:  # Ogni 5 epoche
                 print(f"\n📊 Valutazione SWA model...")
                 # Update batch normalization statistics
-                update_bn(train_RAVDESS_dataloader, swa_model, device=DEVICE)
+                update_bn_custom(train_RAVDESS_dataloader, swa_model, DEVICE)
                 swa_val_loss, swa_val_acc = validate(swa_model, val_RAVDESS_dataloader, criterion, DEVICE)
                 print(f"SWA Val Loss: {swa_val_loss:.4f} | SWA Val Acc: {swa_val_acc:.2f}%")
                 
@@ -329,7 +361,7 @@ if __name__ == "__main__":
     # Valutazione finale del SWA model
     if using_swa:
         print(f"\n🔄 Valutazione finale SWA model...")
-        update_bn(train_RAVDESS_dataloader, swa_model, device=DEVICE)
+        update_bn_custom(train_RAVDESS_dataloader, swa_model, DEVICE)
         final_swa_val_loss, final_swa_val_acc = validate(swa_model, val_RAVDESS_dataloader, criterion, DEVICE)
         print(f"Final SWA Val Loss: {final_swa_val_loss:.4f} | Final SWA Val Acc: {final_swa_val_acc:.2f}%")
         
