@@ -92,8 +92,8 @@ class CustomRAVDESSDataset(Dataset):
         if self.split == 'train':
             # STRATEGIA MODERATA: Singola maschera più leggera con valori più bassi
             self.spec_augment = torch.nn.Sequential(
-                torchaudio.transforms.FrequencyMasking(freq_mask_param=15), 
-                torchaudio.transforms.TimeMasking(time_mask_param=20),    
+                torchaudio.transforms.FrequencyMasking(freq_mask_param=18), 
+                torchaudio.transforms.TimeMasking(time_mask_param=25),    
             )
         else:
             self.spec_augment = None
