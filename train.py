@@ -27,6 +27,16 @@ NUM_CLASSES = 4       # We consider only 4 emotions: Neutral, Happy, Sad, Angry
 TIME_STEPS = 200      # Consider avg or max time steps calculated before 
 MEL_BANDS = 128
 
+# Model Configuration
+DROPOUT = 0.4  # Ridotto da 0.6 per permettere di imparare feature sottili (es. Sad)
+
+# Augmentation Configuration
+SPEC_FREQ_MASK = 12  # Ridotto da 18 per preservare feature sottili
+SPEC_TIME_MASK = 15  # Ridotto da 25 per preservare feature sottili
+
+# Class Weights Configuration (Neutral, Happy, Sad, Angry)
+CLASS_WEIGHTS = [1.0, 1.0, 1.5, 1.0]  # Sad ha peso maggiore perché più difficile
+
 # SWA Configuration
 SWA_START_EPOCH = 15  # Inizia SWA dopo 15 epoche (quando il modello è già convergente)
 SWA_LR = 0.0001       # Learning rate costante per SWA (più basso del LR iniziale)
@@ -193,7 +203,12 @@ if __name__ == "__main__":
     print(f"\n✅ RAVDESS trovato: {ravdess_path}\n")
     
     # Create RAVDESS datasets
-    train_RAVDESS_dataset = CustomRAVDESSDataset(dataset_root=str(ravdess_path), split='train')
+    train_RAVDESS_dataset = CustomRAVDESSDataset(
+        dataset_root=str(ravdess_path), 
+        split='train',
+        spec_freq_mask=SPEC_FREQ_MASK,
+        spec_time_mask=SPEC_TIME_MASK
+    )
     val_RAVDESS_dataset = CustomRAVDESSDataset(dataset_root=str(ravdess_path), split='validation')
     
     print(f"Train samples: {len(train_RAVDESS_dataset)}")
@@ -205,7 +220,7 @@ if __name__ == "__main__":
     val_RAVDESS_dataloader = DataLoader(val_RAVDESS_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     # Inizializzazione Modello
-    model = CRNN_BiLSTM(batch_size=BATCH_SIZE, time_steps=TIME_STEPS).to(DEVICE)
+    model = CRNN_BiLSTM(batch_size=BATCH_SIZE, time_steps=TIME_STEPS, dropout=DROPOUT).to(DEVICE)
     
     # Stampa dell'architettura del modello
     print("\n" + "="*80)
@@ -214,10 +229,11 @@ if __name__ == "__main__":
     print(model)
     print("="*80 + "\n")
 
-    # Class weights per bilanciare le classi (normalizzati)
+    # Class weights per bilanciare le classi
     # Ordine delle classi (da EMOTION_ID_MAP in custom_ravdess_dataset.py):
-    # 0: Neutral (0.8) | 1: Happy (1.2) | 2: Sad (1.2) | 3: Angry (1.2)
-    class_weights = torch.tensor([0.8, 1.2, 1.2, 1.2], dtype=torch.float32).to(DEVICE)
+    # 0: Neutral | 1: Happy | 2: Sad | 3: Angry
+    # Sad ha peso maggiore perché è la classe più difficile da riconoscere
+    class_weights = torch.tensor(CLASS_WEIGHTS, dtype=torch.float32).to(DEVICE)
     # Normalizza i pesi (somma = 1)
     class_weights = class_weights / class_weights.sum()
 
@@ -266,7 +282,14 @@ if __name__ == "__main__":
             "early_stopping_patience": early_stopping.patience,
             "device": str(DEVICE),
             "swa_start_epoch": SWA_START_EPOCH,
-            "swa_lr": SWA_LR
+            "swa_lr": SWA_LR,
+            # Model hyperparameters
+            "dropout": DROPOUT,
+            # Augmentation hyperparameters
+            "spec_freq_mask": SPEC_FREQ_MASK,
+            "spec_time_mask": SPEC_TIME_MASK,
+            # Class weights
+            "class_weights": CLASS_WEIGHTS
         }
     )
 

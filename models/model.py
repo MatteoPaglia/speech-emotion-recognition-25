@@ -2,8 +2,9 @@ from torch import nn
 import torch
 
 class CRNN_BiLSTM(nn.Module):
-    def __init__(self, batch_size, time_steps, mel_band=128, channel=1):
+    def __init__(self, batch_size, time_steps, mel_band=128, channel=1, dropout=0.4):
         super().__init__()
+        self.dropout_rate = dropout
         
         self.block1 = nn.Sequential(
             nn.Conv2d(channel, 128, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
@@ -57,7 +58,7 @@ class CRNN_BiLSTM(nn.Module):
         self.attention_linear = nn.Linear(self.hidden_size * 2, 1)
 
         # Layer di classificazione finale
-        self.dropout = nn.Dropout(0.6)  # Aumentato per ridurre overfitting
+        self.dropout = nn.Dropout(self.dropout_rate)
         self.classifier = nn.Linear(self.hidden_size * 2, self.num_classes)
 
 
