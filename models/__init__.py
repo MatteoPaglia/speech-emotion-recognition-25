@@ -21,8 +21,8 @@ def get_model(model_name, **kwargs):
     
     Args:
         model_name (str): Nome del modello da istanziare. Opzioni disponibili:
-            - 'crnn_lstm' o 'lstm': CRNN con BiLSTM
-            - 'crnn_gru' o 'gru': CRNN con BiGRU
+            - 'CRNN_BiLSTM': CRNN con BiLSTM
+            - 'CRNN_BiGRU': CRNN con BiGRU
             (Futuro: 'resnet18', 'resnet34', 'resnet50', 'vgg16', 'vgg19')
         **kwargs: Parametri specifici del modello (batch_size, time_steps, dropout, etc.)
     
@@ -34,19 +34,14 @@ def get_model(model_name, **kwargs):
     
     Examples:
         >>> # LSTM model
-        >>> model = get_model('lstm', batch_size=32, time_steps=200, dropout=0.4)
+        >>> model = get_model('CRNN_BiLSTM', batch_size=32, time_steps=200, dropout=0.4)
         
         >>> # GRU model
-        >>> model = get_model('gru', batch_size=32, time_steps=200, dropout=0.4)
-        
-        >>> # Con nome esplicito
-        >>> model = get_model('crnn_lstm', batch_size=32, time_steps=200)
+        >>> model = get_model('CRNN_BiGRU', batch_size=32, time_steps=200, dropout=0.4)
     """
     models = {
-        'crnn_lstm': CRNN_BiLSTM,
-        'lstm': CRNN_BiLSTM,  # Alias per comodità
-        'crnn_gru': CRNN_BiGRU,
-        'gru': CRNN_BiGRU,  # Alias per comodità
+        'CRNN_BiLSTM': CRNN_BiLSTM,
+        'CRNN_BiGRU': CRNN_BiGRU,
         # Aggiungerai qui i modelli di transfer learning:
         # 'resnet18': ResNetEmotion18,
         # 'resnet34': ResNetEmotion34,
@@ -55,15 +50,14 @@ def get_model(model_name, **kwargs):
         # 'vgg19': VGGEmotion19,
     }
     
-    model_name_lower = model_name.lower()
-    if model_name_lower not in models:
+    if model_name not in models:
         available = ', '.join(sorted(models.keys()))
         raise ValueError(
             f"Modello '{model_name}' non trovato.\n"
             f"Modelli disponibili: {available}"
         )
     
-    return models[model_name_lower](**kwargs)
+    return models[model_name](**kwargs)
 
 
 # Export per backward compatibility e import diretti

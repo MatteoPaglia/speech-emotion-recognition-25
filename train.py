@@ -16,9 +16,9 @@ import argparse
 
 # --- 1. ARGPARSE (SCELTA MODELLO) ---
 parser = argparse.ArgumentParser(description='Train Speech Emotion Recognition Model')
-parser.add_argument('--model', type=str, default='crnn_lstm', 
-                    choices=['crnn_lstm', 'lstm', 'crnn_gru', 'gru'],
-                    help='Tipo di modello da utilizzare (default: crnn_lstm)')
+parser.add_argument('--model', type=str, default='CRNN_BiLSTM', 
+                    choices=['CRNN_BiLSTM', 'CRNN_BiGRU'],
+                    help='Tipo di modello da utilizzare (default: CRNN_BiLSTM)')
 args = parser.parse_args()
 
 MODEL_TYPE = args.model
