@@ -11,8 +11,17 @@ import wandb
 from torch.optim.swa_utils import AveragedModel, SWALR, update_bn
 
 from dataset.custom_ravdess_dataset import CustomRAVDESSDataset
-from models.model import CRNN_BiLSTM 
+from models import get_model
+import argparse
 
+# --- 1. ARGPARSE (SCELTA MODELLO) ---
+parser = argparse.ArgumentParser(description='Train Speech Emotion Recognition Model')
+parser.add_argument('--model', type=str, default='crnn_lstm', 
+                    choices=['crnn_lstm', 'lstm', 'crnn_gru', 'gru'],
+                    help='Tipo di modello da utilizzare (default: crnn_lstm)')
+args = parser.parse_args()
+
+MODEL_TYPE = args.model
 # --- 2. CONFIGURAZIONE (IPERPARAMETRI) ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Se usi Mac M1/M2 puoi usare: torch.device("mps")
@@ -220,7 +229,7 @@ if __name__ == "__main__":
     val_RAVDESS_dataloader = DataLoader(val_RAVDESS_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     # Inizializzazione Modello
-    model = CRNN_BiLSTM(batch_size=BATCH_SIZE, time_steps=TIME_STEPS, dropout=DROPOUT).to(DEVICE)
+    model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS, dropout=DROPOUT).to(DEVICE)
     
     # Stampa dell'architettura del modello
     print("\n" + "="*80)
@@ -275,7 +284,7 @@ if __name__ == "__main__":
             "num_classes": NUM_CLASSES,
             "time_steps": TIME_STEPS,
             "mel_bands": MEL_BANDS,
-            "architecture": "CRNN_BiLSTM",
+            "architecture": MODEL_TYPE,
             "dataset": "RAVDESS",
             "optimizer": "Adam",
             "weight_decay": 1e-4,

@@ -11,7 +11,19 @@ from datetime import datetime, timedelta
 import wandb
 
 from dataset.custom_ravdess_dataset import CustomRAVDESSDataset
-from models.model import CRNN_BiLSTM
+from models import get_model
+import argparse
+
+# --- ARGPARSE (SCELTA MODELLO) ---
+parser = argparse.ArgumentParser(description='Evaluate Speech Emotion Recognition Model')
+parser.add_argument('--model', type=str, default='crnn_lstm', 
+                    choices=['crnn_lstm', 'lstm', 'crnn_gru', 'gru'],
+                    help='Tipo di modello da valutare (default: crnn_lstm)')
+parser.add_argument('--checkpoint', type=str, default='checkpoints/best_model.pth',
+                    help='Percorso del checkpoint del modello (default: checkpoints/best_model.pth)')
+args = parser.parse_args()
+
+MODEL_TYPE = args.model
 
 # --- CONFIGURAZIONE ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -19,7 +31,7 @@ BATCH_SIZE = 32
 NUM_CLASSES = 4
 TIME_STEPS = 200
 MEL_BANDS = 128
-MODEL_PATH = "checkpoints/best_model.pth"
+MODEL_PATH = args.checkpoint
 
 EMOTION_LABELS = ['neutral', 'happy', 'sad', 'angry']
 
@@ -142,6 +154,7 @@ if __name__ == "__main__":
             "time_steps": TIME_STEPS,
             "mel_bands": MEL_BANDS,
             "model_path": MODEL_PATH,
+            "architecture": MODEL_TYPE,
             "dataset": "RAVDESS",
             "split": "test",
             "device": str(DEVICE)
@@ -167,7 +180,7 @@ if __name__ == "__main__":
     if not Path(MODEL_PATH).exists():
         raise FileNotFoundError(f"❌ Modello non trovato: {MODEL_PATH}")
     
-    model = CRNN_BiLSTM(batch_size=BATCH_SIZE, time_steps=TIME_STEPS)
+    model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS)
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     model = model.to(DEVICE)
     print(f"✅ Modello caricato da {MODEL_PATH}\n")
