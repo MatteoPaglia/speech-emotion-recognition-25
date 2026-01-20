@@ -45,13 +45,15 @@ class CustomRAVDESSDataset(Dataset):
     MODALITY_AUDIO_ONLY = '03'  # Solo audio (no video)
     VOCAL_CHANNEL_SPEECH = '01'  # Solo speech (no song)
     
-    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=2048, target_hop_length=512, target_n_mels=128, use_silence_trimming=True, use_avg_audio=True):
+    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=2048, target_hop_length=512, target_n_mels=128, use_silence_trimming=True, use_avg_audio=True, spec_freq_mask=12, spec_time_mask=15):
         """
         Args:
             dataset_root (str): Path to the RAVDESS dataset root folder
             split (str): 'train', 'validation', or 'test'
             transform (callable, optional): Optional transform to be applied on audio waveform
             use_silence_trimming (bool): Se True, applica silence trimming ai dati
+            spec_freq_mask (int): Parametro per FrequencyMasking in SpecAugment
+            spec_time_mask (int): Parametro per TimeMasking in SpecAugment
             
         Split fisso:
             - Train: Actors 01-20 (10M + 10F)
@@ -63,6 +65,8 @@ class CustomRAVDESSDataset(Dataset):
         self.transform = transform
         self.use_silence_trimming = use_silence_trimming
         self.use_avg_audio = use_avg_audio
+        self.spec_freq_mask = spec_freq_mask
+        self.spec_time_mask = spec_time_mask
 
         #hyperparameters per l'estrazione delle feature
         self.target_sample_rate = target_sample_rate
@@ -90,9 +94,10 @@ class CustomRAVDESSDataset(Dataset):
         # SpecAugment per Training (maschera parti dello spettrogramma)
         # Solo per training, non per validation/test
         if self.split == 'train':
+            # STRATEGIA LEGGERA: Ridotto per preservare feature sottili (es. Sad)
             self.spec_augment = torch.nn.Sequential(
-                torchaudio.transforms.FrequencyMasking(freq_mask_param=15),  # Maschera 15 freq bin
-                torchaudio.transforms.TimeMasking(time_mask_param=20)        # Maschera 20 time steps
+                torchaudio.transforms.FrequencyMasking(freq_mask_param=spec_freq_mask), 
+                torchaudio.transforms.TimeMasking(time_mask_param=spec_time_mask),    
             )
         else:
             self.spec_augment = None
