@@ -30,11 +30,11 @@ MEL_BANDS_RAVDESS = 128
 DROPOUT_RAVDESS = 0.4  # Ridotto per preservare feature sottili (es. Sad)
 
 # Augmentation Configuration
-SPEC_FREQ_MASK_RAVDESS = 12  # Ridotto per preservare feature sottili
+SPEC_FREQ_MASK_RAVDESS = 30  # Aumentato da 12: costringe a imparare differenze sottili tra Angry/Happy
 SPEC_TIME_MASK_RAVDESS = 15  # Ridotto per preservare feature sottili
 
 # Class Weights Configuration (Neutral, Happy, Sad, Angry)
-CLASS_WEIGHTS_RAVDESS = [1.0, 1.0, 1.5, 1.0]  # Sad ha peso maggiore
+CLASS_WEIGHTS_RAVDESS = [1.0, 1.0, 2.0, 1.0]  # Neutral 1.0 evita falsi Happy, Sad 2.0 per aiutarlo
 
 # SWA Configuration
 SWA_START_EPOCH_RAVDESS = 15  # Inizia SWA dopo 15 epoche

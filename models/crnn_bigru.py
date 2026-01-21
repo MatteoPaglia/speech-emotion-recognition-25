@@ -29,8 +29,8 @@ class CRNN_BiGRU(nn.Module):
             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
         )
         self.block4 = nn.Sequential(
-            nn.Conv2d(256, 256, kernel_size=(3,3), stride=(1,1), padding=(1,1)),  # Ripristinato a 256
-            nn.BatchNorm2d(256),
+            nn.Conv2d(256, 128, kernel_size=(3,3), stride=(1,1), padding=(1,1)),  # Ridotto a 128
+            nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.Dropout2d(p=0.2),
             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
@@ -38,9 +38,9 @@ class CRNN_BiGRU(nn.Module):
 
         # Calcolo dimensione feature per la GRU (identico alla LSTM):
         # Dopo 4 MaxPool (2x2), l'altezza (frequenza) diventa 128 / 16 = 8.
-        # I canali sono diventati 256.
-        # Quindi ogni step temporale avrà un vettore di: 256 * 8 = 2048 feature
-        self.gru_input_size = 256 * 8  # 2048
+        # I canali sono diventati 128 (ridotto).
+        # Quindi ogni step temporale avrà un vettore di: 128 * 8 = 1024 feature
+        self.gru_input_size = 128 * 8  # 1024 (ridotto da 2048)
         self.hidden_size = 128
         self.num_classes = 4  # Ho solo 4 classi di emozioni (Neutral, Happy, Sad, Angry)
 
