@@ -75,12 +75,7 @@ class CustomRAVDESSDataset(Dataset):
         self.n_mels = target_n_mels
 
         # Default target_samples 
-        self.target_samples = int(target_length * self.target_sample_rate) # 48000
-        
-        # Flag e variabili per la durata POST-TRIMMING (calcolate lazy al primo uso)
-        self.trimmed_stats_computed = False
-        self.mean_trimmed_samples = None
-        self.max_trimmed_samples = None
+        self.target_samples = int(target_length * self.target_sample_rate) # 48000 (3 secondi @ 16kHz)
         
         # Trasformazione MelSpectrogram (Identica a IEMOCAP per coerenza)
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
@@ -134,6 +129,52 @@ class CustomRAVDESSDataset(Dataset):
             'repetition': parts[5],         # 01 o 02
             'actor': parts[6]               # 01-24
         }
+    
+    def _validate_audio_file(self, audio_path, min_duration=0.5, max_duration=30.0):
+        """
+        Valida l'integrità di un file audio usando LIBROSA (no FFmpeg richiesto).
+        
+        Args:
+            audio_path (Path): Percorso al file audio
+            min_duration (float): Durata minima in secondi
+            max_duration (float): Durata massima in secondi
+        
+        Returns:
+            tuple: (is_valid: bool, error_message: str or None)
+        """
+        try:
+            # Verifica che il file esista
+            if not audio_path.exists():
+                return False, "File non esiste"
+            
+            # Verifica che sia leggibile
+            if not os.access(audio_path, os.R_OK):
+                return False, "File non leggibile"
+            
+            # Carica con librosa (no FFmpeg richiesto!)
+            waveform, sample_rate = librosa.load(str(audio_path), sr=None)
+            
+            # Verifica dimensioni
+            if len(waveform) == 0:
+                return False, "Waveform vuota"
+            
+            # Calcola durata
+            duration = len(waveform) / sample_rate
+            
+            # Verifica intervallo durata
+            if duration < min_duration:
+                return False, f"Troppo corto ({duration:.2f}s < {min_duration}s)"
+            if duration > max_duration:
+                return False, f"Troppo lungo ({duration:.2f}s > {max_duration}s)"
+            
+            # Verifica che non sia tutto silenzio
+            if np.max(np.abs(waveform)) < 1e-6:
+                return False, "Audio tutto silenzio"
+            
+            return True, None
+            
+        except Exception as e:
+            return False, f"Errore librosa: {str(e)}"
        
     def _collect_samples(self):
         """
@@ -175,7 +216,12 @@ class CustomRAVDESSDataset(Dataset):
             if metadata['emotion'] not in self.EMOTION_DICT:
                 continue
             
-            # 8. Se passa tutti i filtri, aggiungi ai samples
+            # 8. VALIDAZIONE: Verifica integrità file audio
+            is_valid, error_msg = self._validate_audio_file(audio_file)
+            if not is_valid:
+                continue
+            
+            # 9. Se passa tutti i filtri, aggiungi ai samples
             # Aggiungi anche l'etichetta testuale dell'emozione
             metadata['emotion_label'] = self.EMOTION_DICT[metadata['emotion']]
             
@@ -231,90 +277,28 @@ class CustomRAVDESSDataset(Dataset):
 
     def _process_waveform(self, waveform):
         """
-        Processa la waveform completa:
-        FASE 1: Trim silenzio dalle estremità (calcolo media pst-trimming se necessario)
-        FASE 2: Center crop o padding alla durata media POST-TRIMMING
+        Processa la waveform per renderla esattamente 3 secondi:
+        - Audio troppo lungo: CENTER CROP (prendi parte centrale)
+        - Audio troppo corto: ZERO PADDING (aggiungi silenzio)
         
-        TODO: collate function necessaria ? 
-
         Args:
             waveform (torch.Tensor): Tensore audio [1, num_samples]
         
         Returns:
-            torch.Tensor: Waveform processata [1, mean_trimmed_samples]
+            torch.Tensor: Waveform processata [1, target_samples] (48000 campioni @ 16kHz = 3s)
         """
-        # FASE 1: TRIM SILENZIO
-        if self.use_silence_trimming:
-            try:
-                waveform_np = waveform.numpy()[0]
-                trimmed, _ = librosa.effects.trim(waveform_np, top_db=40, ref=np.max) #TODO: MODIFY PARAM ? 
-                waveform = torch.from_numpy(trimmed).unsqueeze(0).float()
-            except Exception as e:
-                print(f"⚠️  Errore nel trim_silence: {e}")
-        
-        # CALCOLA MEDIA E MASSIMO POST-TRIMMING (una sola volta, lazy)
-        if not self.trimmed_stats_computed:
-            print(f"\n📊 Calcolando statistiche durata POST-TRIMMING per split '{self.split}'...")
-            total_samples = 0
-            max_samples = 0
-            count = 0
-            
-            for idx, sample in enumerate(self.samples):
-                try:
-                    wf, sr = torchaudio.load(str(sample['path']))
-                    
-                    if sr != self.target_sample_rate:
-                        resampler = torchaudio.transforms.Resample(sr, self.target_sample_rate)
-                        wf = resampler(wf)
-                    
-                    if wf.shape[0] > 1:
-                        if self.use_avg_audio:
-                            wf = torch.mean(wf, dim=0, keepdim=True)
-                        else:   
-                            wf = torch.max(wf, dim=0, keepdim=True)[0].unsqueeze(0)
-                    
-                    # TRIM SILENZIO
-                    if self.use_silence_trimming:
-                        wf_np = wf.numpy()[0]
-                        trimmed_wf, _ = librosa.effects.trim(wf_np, top_db=40, ref=np.max)
-                        wf = torch.from_numpy(trimmed_wf).unsqueeze(0).float()
-                    
-                    total_samples += wf.shape[1]
-                    max_samples = max(max_samples, wf.shape[1])
-                    count += 1
-                    
-                    if (idx + 1) % max(1, len(self.samples) // 5) == 0:
-                        print(f"   {idx + 1}/{len(self.samples)} file processati...")
-                except Exception:
-                    continue
-            
-            if count > 0:
-                self.mean_trimmed_samples = total_samples // count
-                self.max_trimmed_samples = max_samples
-                avg_seconds = self.mean_trimmed_samples / self.target_sample_rate
-                max_seconds = self.max_trimmed_samples / self.target_sample_rate
-                print(f"✅ Media: {avg_seconds:.2f}s ({self.mean_trimmed_samples} campioni)")
-                print(f"✅ Massimo: {max_seconds:.2f}s ({self.max_trimmed_samples} campioni)\n")
-            else:
-                self.mean_trimmed_samples = int(3.0 * self.target_sample_rate)
-                self.max_trimmed_samples = int(3.0 * self.target_sample_rate)
-                print(f"❌ Calcolo fallito, usando default 3.0s\n")
-            
-            self.trimmed_stats_computed = True
-        
-        # FASE 2: CENTER CROP o PADDING basato su media o massimo
         c, n = waveform.shape
-        target_len = self.max_trimmed_samples if not self.use_avg_audio else self.mean_trimmed_samples
+        target_len = self.target_samples  # 48000
         
         if n > target_len:
-            # Audio troppo lungo: CENTER CROP (prendi la parte centrale) --- TODO:RANDOM CROP?
+            # Audio troppo lungo: CENTER CROP (prendi la parte centrale)
             start = (n - target_len) // 2
             waveform = waveform[:, start:start+target_len]
                 
         elif n < target_len:
-            # Audio troppo corto: PADDING
-            padding = target_len - n
-            waveform = torch.nn.functional.pad(waveform, (0, padding))
+            # Audio troppo corto: ZERO PADDING (aggiungi silenzio alla fine)
+            padding_needed = target_len - n
+            waveform = torch.nn.functional.pad(waveform, (0, padding_needed), mode='constant', value=0)
             
         return waveform
     
@@ -323,8 +307,9 @@ class CustomRAVDESSDataset(Dataset):
         audio_path = sample_info['path']
         metadata = sample_info['metadata']
         
-        # 1. Load Audio
-        waveform, sample_rate = torchaudio.load(str(audio_path))
+        # 1. Load Audio con librosa (evita dipendenza FFmpeg)
+        waveform_np, sample_rate = librosa.load(str(audio_path), sr=None)
+        waveform = torch.from_numpy(waveform_np).unsqueeze(0).float()
         
         # Resample
         if sample_rate != self.target_sample_rate:
@@ -340,10 +325,11 @@ class CustomRAVDESSDataset(Dataset):
         
         # 3. AUGMENTATION WAVEFORM (Solo per Training - Speech Emotion Recognition Safe)
         if self.split == 'train':
-            # A. White Noise Addition (50% probabilità)
-            # Aiuta a rendere il modello robusto al rumore ambientale
+            # A. Gaussian Noise Addition (50% probabilità) - CRITICO per Sad/Neutral
+            # Serve a rompere la simmetria tra silenzio triste e silenzio neutro
+            # Aiuta anche a rendere il modello robusto al rumore ambientale
             if random.random() < 0.5:
-                noise_level = 0.003  # Piccola quantità di rumore
+                noise_level = random.uniform(0.001, 0.005)  # Livello basso ma variabile
                 noise = torch.randn_like(waveform) * noise_level
                 waveform = waveform + noise
             
@@ -355,12 +341,11 @@ class CustomRAVDESSDataset(Dataset):
                 # Clipping per evitare distorsione
                 waveform = torch.clamp(waveform, -1.0, 1.0)
             
-            # C. Time Shift (30% probabilità)
+            # C. Time Shift / Rolling (50% probabilità) - Aiuta a non memorizzare l'inizio esatto
             # Sposta temporalmente l'audio (simula timing variabile dell'emozione)
-            if random.random() < 0.3:
-                max_shift = int(0.1 * self.target_sample_rate)  # Shift fino al 10% della lunghezza
-                shift = random.randint(-max_shift, max_shift)
-                waveform = torch.roll(waveform, shift, dims=1)
+            if random.random() < 0.5:
+                shift_amt = int(random.random() * self.target_sample_rate * 0.1)  # Max 0.1s
+                waveform = torch.roll(waveform, shift_amt, dims=1)
         
         # 4. Mel Spectrogram
         mel_spec = self.mel_transform(waveform)

@@ -1,0 +1,44 @@
+{
+  "os":  "Windows-10-10.0.19045-SP0",
+  "python":  "CPython 3.10.0",
+  "startedAt":  "2026-01-21T15:54:57.016518Z",
+  "args":  [
+    "--model",
+    "CRNN_BiLSTM"
+  ],
+  "program":  "d:\\Roba da D\\Poli\\ML Vision\\speech-emotion-recognition-25\\train.py",
+  "codePath":  "train.py",
+  "codePathLocal":  "train.py",
+  "git":  {
+    "remote":  "git@github.com:MatteoPaglia/speech-emotion-recognition-25.git",
+    "commit":  "1ea119085afa0c258db25c375c3536f53ee0fd2c"
+  },
+  "email":  "pagliarellomatteo@gmail.com",
+  "root":  "d:\\Roba da D\\Poli\\ML Vision\\speech-emotion-recognition-25",
+  "host":  "DESKTOP-N73TGGQ",
+  "executable":  "d:\\Roba da D\\Poli\\ML Vision\\speech-emotion-recognition-25\\venv\\Scripts\\python.exe",
+  "cpu_count":  6,
+  "cpu_count_logical":  12,
+  "gpu":  "NVIDIA GeForce RTX 5060 Ti",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "999626371072",
+      "used":  "375752708096"
+    }
+  },
+  "memory":  {
+    "total":  "17057173504"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 5060 Ti",
+      "memoryTotal":  "17103323136",
+      "cudaCores":  4608,
+      "architecture":  "Blackwell",
+      "uuid":  "GPU-70516535-3dbd-3832-7534-3d08bf10fb84"
+    }
+  ],
+  "cudaVersion":  "13.1",
+  "writerId":  "98157qsalrfzmcfwd556jsg8yvluv1xn"
+}

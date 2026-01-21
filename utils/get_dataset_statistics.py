@@ -132,6 +132,7 @@ def print_iemocap_stats(samples, name="IEMOCAP"):
     print(f"🔹 SPEAKER UNICI (session, gender): {len(speakers)}")
     print(f"   Elenco: {sorted(list(speakers))}")
     print(f"🔹 IMPROVVISAZIONI UNICHE: {len(improvs)}")
+    print(f"   Elenco: {sorted(list(improvs))}")
     
     # === SPEAKER INDEPENDENCE CHECK ===
     print(f"\n👥 SPEAKER INDEPENDENCE (per verificare leakage):")

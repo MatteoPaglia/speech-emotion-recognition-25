@@ -1,0 +1,1 @@
+{"swa_val_loss":0.6725263794263204,"_timestamp":1.7690125348576508e+09,"epoch":49,"val_loss":0.6860944628715515,"_wandb":{"runtime":463},"swa_val_accuracy":68.05555555555556,"train_loss":0.44164743242056476,"val_accuracy":79.16666666666666,"_step":54,"train_accuracy":82.08333333333333,"_runtime":463}

@@ -6,59 +6,96 @@ class CRNN_BiLSTM(nn.Module):
         super().__init__()
         self.dropout_rate = dropout
         
+        # === VECCHIA IMPLEMENTAZIONE (COMMENTATA) ===
+        # self.block1 = nn.Sequential(
+        #     nn.Conv2d(channel, 128, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
+        #     nn.BatchNorm2d(128),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+        # )
+        # self.block2 = nn.Sequential(
+        #     nn.Conv2d(128, 256, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
+        #     nn.BatchNorm2d(256),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+        # )
+        # self.block3 = nn.Sequential(
+        #     nn.Conv2d(256, 512, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
+        #     nn.BatchNorm2d(512),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+        # )
+        # self.block4 = nn.Sequential(  # ⚠️ PROBLEMATICO: 1024 canali sono eccessivi per 1440 campioni
+        #      nn.Conv2d(512, 1024, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
+        #      nn.BatchNorm2d(1024),
+        #      nn.ReLU(),
+        #      nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+        # )
+        
+        # === NUOVA IMPLEMENTAZIONE (OTTIMIZZATA) ===
+        # Riduzione delle dimensioni: 128 -> 128 -> 256 -> 256 (anzichè -> 512 -> 1024)
+        # Aggiunta di Dropout tra i blocchi per ridurre overfitting
+        
         self.block1 = nn.Sequential(
             nn.Conv2d(channel, 128, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
-        )
-        self.block2 = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
-        )
-        self.block3 = nn.Sequential(
-            nn.Conv2d(256, 512, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
+            nn.Dropout2d(p=0.2),  # Dropout dopo il primo blocco
             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
         )
         
+        self.block2 = nn.Sequential(
+            nn.Conv2d(128, 128, kernel_size=(3,3), stride=(1,1), padding=(1,1)),  # 128 -> 128 (meno canali)
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.Dropout2d(p=0.2),  # Dropout dopo il secondo blocco
+            nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+        )
+        
+        self.block3 = nn.Sequential(
+            nn.Conv2d(128, 256, kernel_size=(3,3), stride=(1,1), padding=(1,1)),  # 128 -> 256
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Dropout2d(p=0.2),  # Dropout dopo il terzo blocco
+            nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+        )
+        
+        # Block4: ripristinato a 256 canali
         self.block4 = nn.Sequential(
-             nn.Conv2d(512, 1024, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
-             nn.BatchNorm2d(1024),
-             nn.ReLU(),
-             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+            nn.Conv2d(256, 256, kernel_size=(3,3), stride=(1,1), padding=(1,1)),  # 256 -> 256
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Dropout2d(p=0.2),  # Dropout dopo il quarto blocco
+            nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
         )
 
         # Calcolo dimensione feature per la LSTM:
         # Dopo 4 MaxPool (2x2), l'altezza (frequenza) diventa 128 / 16 = 8.
-        # I canali sono diventati 1024.
-        # Quindi ogni step temporale avrà un vettore di: 1024 * 8 = 8192 feature.
-        self.lstm_input_size = 1024 * 8
+        # I canali sono diventati 256.
+        # Quindi ogni step temporale avrà un vettore di: 256 * 8 = 2048 feature
+        self.lstm_input_size = 256 * 8  # 2048
         self.hidden_size = 128
-        self.num_classes = 4  # Ho solo 4 classi di emozioni (Neutral, Happy, Sad, Angry)
+        self.num_classes = 4  # 4 classi di emozioni (Neutral, Happy, Sad, Angry)
 
-        # Projection Layer per ridurre gradualmente le dimensioni (evita collo di bottiglia)
-        # Riduciamo da 8192 -> 128 con una densa prima della LSTM
+        # Projection Layer per ridurre gradualmente le dimensioni
+        # 2048 -> 128 con una densa prima della LSTM
         self.projection = nn.Linear(self.lstm_input_size, self.hidden_size)
 
         # Bi-LSTM
         self.lstm = nn.LSTM(
-            input_size=self.hidden_size,  # Input dal projection layer (128, non 1024)
+            input_size=self.hidden_size,
             hidden_size=self.hidden_size, 
-            num_layers=1,             # Solitamente 1 o 2 strati
+            num_layers=1,
             bidirectional=True, 
-            batch_first=True          # Importante: input sarà (Batch, Time, Features)
+            batch_first=True
         )
 
         # Layer per l'Attention Mechanism
-        # Proietta l'output della LSTM (256 feature perché bidirezionale) in uno score scalare
         self.attention_linear = nn.Linear(self.hidden_size * 2, 1)
 
-        # Layer di classificazione finale
-        self.dropout = nn.Dropout(self.dropout_rate)
+        # Layer di classificazione finale con Dropout ridotto (0.3 vs 0.5)
+        # Con weight_decay=0.001, possiamo permetterci dropout più basso
+        self.dropout = nn.Dropout(0.3)
         self.classifier = nn.Linear(self.hidden_size * 2, self.num_classes)
 
 

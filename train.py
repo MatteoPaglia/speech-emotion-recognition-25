@@ -9,10 +9,13 @@ from torch.utils.data import DataLoader
 from datetime import datetime, timedelta
 import wandb
 from torch.optim.swa_utils import AveragedModel, SWALR, update_bn
+import argparse
 
+import config as Config
 from dataset.custom_ravdess_dataset import CustomRAVDESSDataset
 from models import get_model
-import argparse
+from utils.training_utils import SimpleEarlyStopping, save_swa_checkpoint, update_bn_custom
+
 
 # --- 1. ARGPARSE (SCELTA MODELLO) ---
 parser = argparse.ArgumentParser(description='Train Speech Emotion Recognition Model')
@@ -22,123 +25,27 @@ parser.add_argument('--model', type=str, default='CRNN_BiLSTM',
 args = parser.parse_args()
 
 MODEL_TYPE = args.model
-# --- 2. CONFIGURAZIONE (IPERPARAMETRI) ---
+# --- 2. CONFIGURAZIONE (IMPORTATE DA CONFIG) ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# Se usi Mac M1/M2 puoi usare: torch.device("mps")
 
 # Crea cartella checkpoints se non esiste
 Path("checkpoints").mkdir(exist_ok=True)
 
-BATCH_SIZE = 32
-LEARNING_RATE = 0.0005  # Adam lavora bene con 1e-3 o 1e-4
-NUM_EPOCHS = 100
-NUM_CLASSES = 4       # We consider only 4 emotions: Neutral, Happy, Sad, Angry
-TIME_STEPS = 200      # Consider avg or max time steps calculated before 
-MEL_BANDS = 128
+# Importa da config
+BATCH_SIZE = Config.BATCH_SIZE_RAVDESS
+LEARNING_RATE = Config.LEARNING_RATE_RAVDESS
+NUM_EPOCHS = Config.NUM_EPOCHS_RAVDESS
+NUM_CLASSES = Config.NUM_CLASSES_RAVDESS
+TIME_STEPS = Config.TIME_STEPS_RAVDESS
+MEL_BANDS = Config.MEL_BANDS_RAVDESS
+DROPOUT = Config.DROPOUT_RAVDESS
+SPEC_FREQ_MASK = Config.SPEC_FREQ_MASK_RAVDESS
+SPEC_TIME_MASK = Config.SPEC_TIME_MASK_RAVDESS
+CLASS_WEIGHTS = Config.CLASS_WEIGHTS_RAVDESS
+SWA_START_EPOCH = Config.SWA_START_EPOCH_RAVDESS
+SWA_LR = Config.SWA_LR_RAVDESS
+WEIGHT_DECAY = Config.WEIGHT_DECAY_RAVDESS
 
-# Model Configuration
-DROPOUT = 0.4  # Ridotto da 0.6 per permettere di imparare feature sottili (es. Sad)
-
-# Augmentation Configuration
-SPEC_FREQ_MASK = 12  # Ridotto da 18 per preservare feature sottili
-SPEC_TIME_MASK = 15  # Ridotto da 25 per preservare feature sottili
-
-# Class Weights Configuration (Neutral, Happy, Sad, Angry)
-CLASS_WEIGHTS = [1.0, 1.0, 1.5, 1.0]  # Sad ha peso maggiore perché più difficile
-
-# SWA Configuration
-SWA_START_EPOCH = 15  # Inizia SWA dopo 15 epoche (quando il modello è già convergente)
-SWA_LR = 0.0001       # Learning rate costante per SWA (più basso del LR iniziale)
-
-# --- 2. CONFIGURAZIONE CLASSE PER EARLY STOPPING ---
-class SimpleEarlyStopping:
-    """Versione semplice: si ferma appena la validation loss smette di migliorare."""
-    def __init__(self, patience=5):
-        self.patience = patience
-        self.best_loss = None
-        self.counter = 0
-        self.should_stop = False
-
-    def step(self, val_loss):
-        if self.best_loss is None:
-            self.best_loss = val_loss
-            print(f"📊 Best val loss: {val_loss:.4f}")
-        elif val_loss < self.best_loss:
-            self.best_loss = val_loss
-            self.counter = 0
-            print(f"✓ Migliorato! New best: {val_loss:.4f}")
-        else:
-            self.counter += 1
-            print(f"⚠️ Nessun miglioramento ({self.counter}/{self.patience})")
-            if self.counter >= self.patience:
-                self.should_stop = True
-                print(f"🛑 STOP! Nessun miglioramento per {self.patience} epoche")
-
-print("✓ Classe SimpleEarlyStopping pronta!")
-
-# --- 3. HELPER FUNCTIONS ---
-def save_swa_checkpoint(swa_model, path):
-    """
-    Salva il checkpoint SWA estraendo i pesi dal wrapper AveragedModel.
-    Questo garantisce compatibilità per il caricamento futuro (es. Noisy Student).
-    """
-    unwrapped_state_dict = swa_model.module.state_dict()
-    torch.save(unwrapped_state_dict, path)
-
-def update_bn_custom(loader, model, device):
-    """
-    Wrapper per update_bn che gestisce il formato custom del nostro dataloader.
-    Il nostro loader restituisce dizionari {'audio_features': tensor, ...}
-    mentre update_bn si aspetta direttamente i tensori.
-    """
-    model.train()
-    momenta = {}
-    for module in model.modules():
-        if isinstance(module, torch.nn.modules.batchnorm._BatchNorm):
-            module.running_mean = torch.zeros_like(module.running_mean)
-            module.running_var = torch.ones_like(module.running_var)
-            momenta[module] = module.momentum
-    
-    if not momenta:
-        return
-    
-    was_training = model.training
-    model.train()
-    for module in momenta.keys():
-        module.momentum = None
-        module.num_batches_tracked *= 0
-    
-    for batch in loader:
-        # Estrai il tensore audio dal dizionario
-        inputs = batch['audio_features'].to(device)
-        model(inputs)
-    
-    for bn_module in momenta.keys():
-        bn_module.momentum = momenta[bn_module]
-    model.train(was_training)
-
-# --- 4. RICERCA PERCORSI DATASET ---
-def find_dataset_paths():
-    """Ricerca i percorsi dei dataset"""
-    possible_paths = [
-        Path('/kaggle/input/'),
-        Path.home() / '.cache' / 'kagglehub' / 'datasets',
-        Path('/root/.cache/kagglehub/datasets'),
-        Path('/tmp/kagglehub/datasets'),
-        Path('./data'),
-        Path('../data'),
-        Path('../../data'),
-    ]
-    
-    ravdess_path = None
-    
-    for base_path in possible_paths:
-        if base_path.exists():
-            for root, dirs, files in os.walk(base_path):
-                if 'ravdess-emotional-speech-audio' in dirs and not ravdess_path:
-                    ravdess_path = Path(root) / 'ravdess-emotional-speech-audio'
-    
-    return ravdess_path
 
 # --- 4. FUNZIONE DI TRAINING ---
 def train_one_epoch(model, loader, criterion, optimizer, device):
@@ -146,30 +53,22 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
     running_loss = 0.0
     correct = 0
     total = 0
-
-    loop = tqdm(loader, desc="Training", leave=False)
     
-    for batch in loop:
-        data = batch['audio_features'].to(device)  # Sposta i dati sulla GPU
-        targets = batch['emotion_id'].to(device)   # Sposta le etichette sulla GPU
+    for batch in loader:
+        data = batch['audio_features'].to(device)
+        targets = batch['emotion_id'].to(device)
 
-        # 1. Forward Pass
-        scores = model(data)         # Output shape: (Batch, Num_Classes)
+        scores = model(data)
         loss = criterion(scores, targets)
 
-        # 2. Backward Pass
-        optimizer.zero_grad()        # Pulisci i gradienti vecchi
-        loss.backward()              # Calcola i nuovi gradienti
-        optimizer.step()             # Aggiorna i pesi
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-        # 3. Metriche
         running_loss += loss.item()
-        _, predictions = scores.max(1) # Prendi l'indice della probabilità più alta
+        _, predictions = scores.max(1)
         correct += (predictions == targets).sum().item()
         total += targets.size(0)
-
-        # Aggiorna barra progresso
-        loop.set_postfix(loss=loss.item())
 
     avg_loss = running_loss / len(loader)
     accuracy = correct / total * 100
@@ -177,12 +76,12 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
 
 # --- 5. FUNZIONE DI VALIDATION ---
 def validate(model, loader, criterion, device):
-    model.eval()  # Imposta modalità valutazione (spegne Dropout)
+    model.eval()
     running_loss = 0.0
     correct = 0
     total = 0
 
-    with torch.no_grad(): # Niente gradienti in validazione (risparmia memoria)
+    with torch.no_grad():
         for batch in loader:
             data = batch['audio_features'].to(device)
             targets = batch['emotion_id'].to(device)
@@ -203,8 +102,8 @@ def validate(model, loader, criterion, device):
 if __name__ == "__main__":
     print(f"Using device: {DEVICE}")
 
-    # Ricerca percorsi
-    ravdess_path = find_dataset_paths()
+    #ravdess_path = Config.COLAB_RAVDESS_PATH #for colab training
+    ravdess_path = Path(Config.RAVDESS_PATH) #for local training
     
     if not ravdess_path or not ravdess_path.exists():
         raise ValueError("❌ RAVDESS non trovato! Verifica il percorso del dataset.")
@@ -246,9 +145,11 @@ if __name__ == "__main__":
     # Normalizza i pesi (somma = 1)
     class_weights = class_weights / class_weights.sum()
 
+    # CrossEntropyLoss con class weights per bilanciare il dataset
     criterion = nn.CrossEntropyLoss(weight=class_weights)
     
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    # Adam optimizer con weight decay aumentato per ridurre overfitting e oscillazioni
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # AGGIUNTA: Scheduler per ridurre il LR quando la loss si appiattisce
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -287,7 +188,8 @@ if __name__ == "__main__":
             "architecture": MODEL_TYPE,
             "dataset": "RAVDESS",
             "optimizer": "Adam",
-            "weight_decay": 1e-4,
+            "weight_decay": WEIGHT_DECAY,
+            "loss_function": "CrossEntropyLoss",
             "early_stopping_patience": early_stopping.patience,
             "device": str(DEVICE),
             "swa_start_epoch": SWA_START_EPOCH,
@@ -309,7 +211,7 @@ if __name__ == "__main__":
     print(f"Device:                {DEVICE}")
     print(f"Batch Size:            {BATCH_SIZE}")
     print(f"Learning Rate:         {LEARNING_RATE}")
-    print(f"Weight Decay (L2):     {1e-4}")
+    print(f"Weight Decay (L2):     {WEIGHT_DECAY}")
     print(f"Number of Epochs:      {NUM_EPOCHS}")
     print(f"Early Stopping Patience: {early_stopping.patience}")
     print(f"\nModello:")
@@ -322,50 +224,51 @@ if __name__ == "__main__":
     print(f"Val Samples:           {len(val_RAVDESS_dataset)}")
     print("="*80 + "\n")
 
+    print("\n" + "="*80)
+    print(f"{'Epoch':<8} {'Train Loss':<15} {'Train Acc':<15} {'Val Loss':<15} {'Val Acc':<15}")
+    print("="*80)
+    
     for epoch in range(NUM_EPOCHS):
-        print(f"\nEpoch {epoch+1}/{NUM_EPOCHS}")
-        
         # Train
         train_loss, train_acc = train_one_epoch(model, train_RAVDESS_dataloader, criterion, optimizer, DEVICE)
         
         # Validation
         val_loss, val_acc = validate(model, val_RAVDESS_dataloader, criterion, DEVICE)
 
-        print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%")
-        print(f"Val Loss:   {val_loss:.4f} | Val Acc:   {val_acc:.2f}%")
+        # Stampa compatta di questa epoca
+        epoch_marker = ""
+        if val_acc > best_val_acc:
+            epoch_marker = "⭐"
+            best_val_acc = val_acc
+            checkpoint_path = Path(__file__).parent / "checkpoints" / "best_model.pth"
+            torch.save(model.state_dict(), str(checkpoint_path))
+        
+        print(f"{epoch+1:<8} {train_loss:<15.4f} {train_acc:<15.2f}% {val_loss:<15.4f} {val_acc:<15.2f}% {epoch_marker}")
 
-        # LOGICA SWA: Dopo SWA_START_EPOCH, inizia averaging dei pesi
+        # LOGICA SWA
         if epoch >= SWA_START_EPOCH:
             if not using_swa:
-                print(f"\n🔄 Attivazione SWA da epoch {epoch+1}")
+                print(f"\n🔄 SWA attivato dalla epoca {epoch+1}\n")
                 using_swa = True
             
-            # Update SWA model con i pesi correnti
             swa_model.update_parameters(model)
             swa_scheduler.step()
             
-            # Valuta anche il swa_model periodicamente
-            if (epoch + 1) % 5 == 0:  # Ogni 5 epoche
-                print(f"\n📊 Valutazione SWA model...")
-                # Update batch normalization statistics
+            if (epoch + 1) % 5 == 0:
                 update_bn_custom(train_RAVDESS_dataloader, swa_model, DEVICE)
                 swa_val_loss, swa_val_acc = validate(swa_model, val_RAVDESS_dataloader, criterion, DEVICE)
-                print(f"SWA Val Loss: {swa_val_loss:.4f} | SWA Val Acc: {swa_val_acc:.2f}%")
+                print(f"  SWA: {swa_val_loss:.4f} loss | {swa_val_acc:.2f}% acc")
                 
-                # Log SWA metrics
                 wandb.log({
                     "swa_val_loss": swa_val_loss,
                     "swa_val_accuracy": swa_val_acc
                 })
                 
-                # Salva il miglior SWA model
                 if swa_val_acc > best_swa_val_acc:
                     best_swa_val_acc = swa_val_acc
                     swa_checkpoint_path = Path(__file__).parent / "checkpoints" / "best_swa_model.pth"
                     save_swa_checkpoint(swa_model, str(swa_checkpoint_path))
-                    print(">>> SWA Model Saved!")
         else:
-            # Prima di SWA, usa il normale scheduler
             scheduler.step(val_loss)
 
         # Log metriche su W&B
@@ -377,43 +280,36 @@ if __name__ == "__main__":
             "val_accuracy": val_acc
         })
 
-        # Checkpoint: Salva il modello se è il migliore finora
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            checkpoint_path = Path(__file__).parent / "checkpoints" / "best_model.pth"
-            torch.save(model.state_dict(), str(checkpoint_path))
-            print(">>> Model Saved!")
-
         # Early Stopping
         early_stopping.step(val_loss)
         if early_stopping.should_stop:
-            print(f"\n⏹️ Early stopping attivato dopo {epoch+1} epoche")
+            print(f"\n⏹️ Early stopping alla epoca {epoch+1}")
             break
 
+    print("="*80)
+    
     # Valutazione finale del SWA model
     if using_swa:
-        print(f"\n🔄 Valutazione finale SWA model...")
+        print(f"\n🔄 Valutazione SWA finale...")
         update_bn_custom(train_RAVDESS_dataloader, swa_model, DEVICE)
         final_swa_val_loss, final_swa_val_acc = validate(swa_model, val_RAVDESS_dataloader, criterion, DEVICE)
-        print(f"Final SWA Val Loss: {final_swa_val_loss:.4f} | Final SWA Val Acc: {final_swa_val_acc:.2f}%")
+        print(f"  Final SWA: {final_swa_val_loss:.4f} loss | {final_swa_val_acc:.2f}% acc")
         
-        # Salva il modello SWA finale
         if final_swa_val_acc > best_swa_val_acc:
             swa_checkpoint_path = Path(__file__).parent / "checkpoints" / "best_swa_model.pth"
             save_swa_checkpoint(swa_model, str(swa_checkpoint_path))
             best_swa_val_acc = final_swa_val_acc
-            print(">>> Final SWA Model Saved!")
 
     print("\n" + "="*80)
-    print("✅ Training Complete!")
-    print(f"Best Validation Accuracy (Regular): {best_val_acc:.2f}%")
-    if using_swa:
-        print(f"Best Validation Accuracy (SWA):     {best_swa_val_acc:.2f}%")
-        print(f"\n💡 SWA Improvement: {(best_swa_val_acc - best_val_acc):+.2f}%")
-        print(f"\n📦 Checkpoints salvati in ./checkpoints/:")
-        print(f"   • best_model.pth     → Modello standard")
-        print(f"   • best_swa_model.pth → Modello SWA (raccomandato)")
+    print("✅ TRAINING COMPLETED")
     print("="*80)
+    print(f"Best Validation Accuracy (Regular):  {best_val_acc:.2f}%")
+    if using_swa:
+        print(f"Best Validation Accuracy (SWA):      {best_swa_val_acc:.2f}%")
+        print(f"SWA Improvement:                     {(best_swa_val_acc - best_val_acc):+.2f}%")
+        print(f"\n📦 Recommended checkpoint: best_swa_model.pth")
+    else:
+        print(f"\n📦 Recommended checkpoint: best_model.pth")
+    print("="*80 + "\n")
 
-    # Chiudi W&B
     wandb.finish()

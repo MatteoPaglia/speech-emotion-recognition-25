@@ -101,6 +101,52 @@ class CustomIEMOCAPDataset(Dataset):
         
         print(f"✅ Dataset initialized: {len(self.samples)} {split} samples")
     
+    def _validate_audio_file(self, audio_path, min_duration=0.5, max_duration=30.0):
+        """
+        Valida l'integrità di un file audio usando LIBROSA (no FFmpeg richiesto).
+        
+        Args:
+            audio_path (Path): Percorso al file audio
+            min_duration (float): Durata minima in secondi
+            max_duration (float): Durata massima in secondi
+        
+        Returns:
+            tuple: (is_valid: bool, error_message: str or None)
+        """
+        try:
+            # Verifica che il file esista
+            if not audio_path.exists():
+                return False, "File non esiste"
+            
+            # Verifica che sia leggibile
+            if not os.access(audio_path, os.R_OK):
+                return False, "File non leggibile"
+            
+            # Carica con librosa (no FFmpeg richiesto!)
+            waveform, sample_rate = librosa.load(str(audio_path), sr=None)
+            
+            # Verifica dimensioni
+            if len(waveform) == 0:
+                return False, "Waveform vuota"
+            
+            # Calcola durata
+            duration = len(waveform) / sample_rate
+            
+            # Verifica intervallo durata
+            if duration < min_duration:
+                return False, f"Troppo corto ({duration:.2f}s < {min_duration}s)"
+            if duration > max_duration:
+                return False, f"Troppo lungo ({duration:.2f}s > {max_duration}s)"
+            
+            # Verifica che non sia tutto silenzio
+            if np.max(np.abs(waveform)) < 1e-6:
+                return False, "Audio tutto silenzio"
+            
+            return True, None
+            
+        except Exception as e:
+            return False, f"Errore librosa: {str(e)}"
+    
     def _preload_all_labels(self):
         """
         Pre-carica TUTTE le etichette da tutti i file di valutazione.
@@ -144,44 +190,71 @@ class CustomIEMOCAPDataset(Dataset):
         Collect all available samples from the dataset.
         NOTA: Le etichette vengono cercate nel dizionario pre-caricato (self.label_dict),
         non lette da file durante questa funzione.
+        VALIDAZIONE: Skippa i file audio corrotti o non leggibili.
         """
         samples = []
         data_dir = self.dataset_root
         
         print(f"🔍 Raccogliendo campioni audio...")
         
+        corrupted_files = []  # Traccia i file corrotti
+        skipped_count = 0
+        
         # Itera su tutte le sessioni
         for folder in sorted(data_dir.iterdir()):
             if folder.is_dir() and folder.name.startswith("Session"):
                 folder_id = folder.name[-1]  # Estrai ID sessione (es. '1' da 'Session1')
                 
-                # Raccogli campioni da folder improvvisati
-                sentence_folder = folder / "sentences" / "wav"
+                # Raccogli campioni improvvisati
+                wav_folder = folder / "sentences" / "wav"
                 
-                if sentence_folder.exists():
-                    for folder_sample in sentence_folder.iterdir():
-                        if "impro" in folder_sample.name:
-                            actor = folder_sample.name.split("_")[0][-1]  # Estrai M o F
-                            impro_id = folder_sample.name.split("impro")[1][:2]  # Estrai ID impro
+                if wav_folder.exists():
+                    # Itera su tutti i file WAV direttamente nella cartella wav/
+                    # (anche dentro sottocartelle per compatibilità)
+                    for sample_file in sorted(wav_folder.glob("**/*.wav")):
+                        sample_id = sample_file.stem  # es. 'Ses01F_impro01_F000'
+                        
+                        # Filtra solo i campioni improvvisati (contengono "impro")
+                        if "impro" not in sample_id:
+                            continue
+                        
+                        # Cerca l'etichetta nel dizionario pre-caricato
+                        if sample_id in self.label_dict:
+                            # ✅ VALIDAZIONE: Controlla integrità del file
+                            is_valid, error_msg = self._validate_audio_file(sample_file)
+                            if not is_valid:
+                                corrupted_files.append({
+                                    'sample_id': sample_id,
+                                    'reason': error_msg,
+                                    'path': str(sample_file)
+                                })
+                                skipped_count += 1
+                                continue  # SKIPPA file corrotto
                             
-                            # Itera su tutti i file WAV in questa cartella improvvisata
-                            for sample_file in sorted(folder_sample.glob("*.wav")):
-                                sample_id = sample_file.stem  # es. 'Ses04F_impro06_F002'
-                                audio_path = sample_file
-                                
-                                # Cerca l'etichetta nel dizionario pre-caricato
-                                if sample_id in self.label_dict:
-                                    sample_data = {
-                                        'session_id': folder_id,
-                                        'audio_path': audio_path,
-                                        'sample_id': sample_id,
-                                        'actor': actor,
-                                        'impro_id': impro_id,
-                                        'label': self.label_dict[sample_id]  # Accesso O(1) al dict
-                                    }
-                                    samples.append(sample_data)
+                            # Estrai actor (M o F) e impro_id dal sample_id
+                            # es. da 'Ses01F_impro01_F000' estrai 'F' e '01'
+                            parts = sample_id.split("_")
+                            actor = parts[0][-1]  # Estrai M o F da 'Ses01F'
+                            impro_id = parts[1].replace("impro", "")  # Estrai '01' da 'impro01'
+                            
+                            sample_data = {
+                                'session_id': folder_id,
+                                'audio_path': sample_file,
+                                'sample_id': sample_id,
+                                'actor': actor,
+                                'impro_id': impro_id,
+                                'label': self.label_dict[sample_id]  # Accesso O(1) al dict
+                            }
+                            samples.append(sample_data)
         
-        print(f"✅ Raccolti {len(samples)} campioni audio")
+        print(f"✅ Raccolti {len(samples)} campioni audio validi")
+        if skipped_count > 0:
+            print(f"⚠️  {skipped_count} file corrotti/invalidi SKIPPATI")
+            print(f"\n📋 DETTAGLI FILE CORROTTI:")
+            for corrupted in corrupted_files[:10]:  # Mostra primi 10
+                print(f"   - {corrupted['sample_id']}: {corrupted['reason']}")
+            if len(corrupted_files) > 10:
+                print(f"   ... e altri {len(corrupted_files) - 10}")
         print(f"   - Solo campioni improvvisati")
         print(f"   - Emozioni: {list(self.EMOTION_DICT.values())}")
         return samples
@@ -223,22 +296,25 @@ class CustomIEMOCAPDataset(Dataset):
     
     def _process_waveform(self, waveform):
         """
-        Processa la waveform completa:
+        Processa la waveform completa (numpy array da librosa):
         FASE 1: Trim silenzio dalle estremità (calcolo media pst-trimming se necessario)
         FASE 2: Center crop o padding alla durata media POST-TRIMMING
         
         Args:
-            waveform (torch.Tensor): Tensore audio [1, num_samples]
+            waveform (np.ndarray): Array audio [num_samples]
         
         Returns:
-            torch.Tensor: Waveform processata [1, mean_trimmed_samples]
+            torch.Tensor: Waveform processata come tensor [1, mean_trimmed_samples]
         """
+        # Converti a tensor se necessario
+        if not isinstance(waveform, np.ndarray):
+            waveform = np.array(waveform)
+        
         # FASE 1: TRIM SILENZIO
         if self.use_silence_trimming:
             try:
-                waveform_np = waveform.numpy()[0]
-                trimmed, _ = librosa.effects.trim(waveform_np, top_db=40, ref=np.max)
-                waveform = torch.from_numpy(trimmed).unsqueeze(0).float()
+                trimmed, _ = librosa.effects.trim(waveform, top_db=40, ref=np.max)
+                waveform = trimmed
             except Exception as e:
                 print(f"⚠️  Errore nel trim_silence: {e}")
         
@@ -251,26 +327,15 @@ class CustomIEMOCAPDataset(Dataset):
             
             for idx, sample in enumerate(self.samples):
                 try:
-                    wf, sr = torchaudio.load(str(sample['audio_path']))
-                    
-                    if sr != self.target_sample_rate:
-                        resampler = torchaudio.transforms.Resample(sr, self.target_sample_rate)
-                        wf = resampler(wf)
-                    
-                    if wf.shape[0] > 1:
-                        if self.use_avg_audio:
-                            wf = torch.mean(wf, dim=0, keepdim=True)
-                        else:
-                            wf = torch.max(wf, dim=0, keepdim=True)[0].unsqueeze(0)
+                    wf, sr = librosa.load(str(sample['audio_path']), sr=self.target_sample_rate)
                     
                     # TRIM SILENZIO
                     if self.use_silence_trimming:
-                        wf_np = wf.numpy()[0]
-                        trimmed_wf, _ = librosa.effects.trim(wf_np, top_db=40, ref=np.max)
-                        wf = torch.from_numpy(trimmed_wf).unsqueeze(0).float()
+                        trimmed_wf, _ = librosa.effects.trim(wf, top_db=40, ref=np.max)
+                        wf = trimmed_wf
                     
-                    total_samples += wf.shape[1]
-                    max_samples = max(max_samples, wf.shape[1])
+                    total_samples += len(wf)
+                    max_samples = max(max_samples, len(wf))
                     count += 1
                     
                     if (idx + 1) % max(1, len(self.samples) // 5) == 0:
@@ -293,20 +358,21 @@ class CustomIEMOCAPDataset(Dataset):
             self.trimmed_stats_computed = True
         
         # FASE 2: CENTER CROP o PADDING basato su media o massimo
-        c, n = waveform.shape
+        n = len(waveform)
         target_len = self.max_trimmed_samples if not self.use_avg_audio else self.mean_trimmed_samples
         
         if n > target_len:
             # Audio troppo lungo: CENTER CROP (prendi la parte centrale)
             start = (n - target_len) // 2
-            waveform = waveform[:, start:start+target_len]
+            waveform = waveform[start:start+target_len]
                 
         elif n < target_len:
             # Audio troppo corto: PADDING
             padding = target_len - n
-            waveform = torch.nn.functional.pad(waveform, (0, padding))
-            
-        return waveform
+            waveform = np.pad(waveform, (0, padding), mode='constant', constant_values=0)
+        
+        # Converti a tensor torch
+        return torch.from_numpy(waveform).unsqueeze(0).float()
         
     def __getitem__(self, idx):
         """Retrieve a single sample by index."""
@@ -326,17 +392,9 @@ class CustomIEMOCAPDataset(Dataset):
         if emotion_label is None or emotion_id is None:
             raise ValueError(f"Invalid emotion label: {label}. Only {list(self.EMOTION_DICT.keys())} are supported.")
         
-        # 1. Load Audio
-        waveform, sample_rate = torchaudio.load(str(audio_path))
-        
-        # Resample
-        if sample_rate != self.target_sample_rate:
-            resampler = torchaudio.transforms.Resample(sample_rate, self.target_sample_rate)
-            waveform = resampler(waveform)
-            
-        # Mono check
-        if waveform.shape[0] > 1:
-            waveform = torch.mean(waveform, dim=0, keepdim=True)
+        # 1. Load Audio con LIBROSA (no FFmpeg richiesto!)
+        waveform, _ = librosa.load(str(audio_path), sr=self.target_sample_rate)
+        waveform = torch.from_numpy(waveform).float()
         
         # 2. Process Waveform (trim silenzio + center crop/padding)
         waveform = self._process_waveform(waveform)

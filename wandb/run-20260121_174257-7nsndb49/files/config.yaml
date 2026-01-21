@@ -1,0 +1,81 @@
+_wandb:
+    value:
+        cli_version: 0.23.1
+        e:
+            lbs4aqz5tezegdidgohyjd0kq6qpib84:
+                args:
+                    - --model
+                    - CRNN_BiLSTM
+                    - --checkpoint
+                    - checkpoints/best_model.pth
+                codePath: eval.py
+                codePathLocal: eval.py
+                cpu_count: 6
+                cpu_count_logical: 12
+                cudaVersion: "13.1"
+                disk:
+                    /:
+                        total: "999626371072"
+                        used: "375753359360"
+                email: pagliarellomatteo@gmail.com
+                executable: d:\Roba da D\Poli\ML Vision\speech-emotion-recognition-25\venv\Scripts\python.exe
+                git:
+                    commit: 1ea119085afa0c258db25c375c3536f53ee0fd2c
+                    remote: git@github.com:MatteoPaglia/speech-emotion-recognition-25.git
+                gpu: NVIDIA GeForce RTX 5060 Ti
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Blackwell
+                      cudaCores: 4608
+                      memoryTotal: "17103323136"
+                      name: NVIDIA GeForce RTX 5060 Ti
+                      uuid: GPU-70516535-3dbd-3832-7534-3d08bf10fb84
+                host: DESKTOP-N73TGGQ
+                memory:
+                    total: "17057173504"
+                os: Windows-10-10.0.19045-SP0
+                program: d:\Roba da D\Poli\ML Vision\speech-emotion-recognition-25\eval.py
+                python: CPython 3.10.0
+                root: d:\Roba da D\Poli\ML Vision\speech-emotion-recognition-25
+                startedAt: "2026-01-21T16:42:57.628666Z"
+                writerId: lbs4aqz5tezegdidgohyjd0kq6qpib84
+        m: []
+        python_version: 3.10.0
+        t:
+            "1":
+                - 1
+                - 5
+                - 53
+            "2":
+                - 1
+                - 5
+                - 53
+            "3":
+                - 2
+                - 13
+                - 16
+            "4": 3.10.0
+            "5": 0.23.1
+            "8":
+                - 2
+                - 3
+            "12": 0.23.1
+            "13": windows-amd64
+architecture:
+    value: CRNN_BiLSTM
+batch_size:
+    value: 64
+dataset:
+    value: RAVDESS
+device:
+    value: cuda
+mel_bands:
+    value: 128
+model_path:
+    value: checkpoints/best_model.pth
+num_classes:
+    value: 4
+split:
+    value: test
+time_steps:
+    value: 90

@@ -6,37 +6,41 @@ class CRNN_BiGRU(nn.Module):
         super().__init__()
         self.dropout_rate = dropout
         
-        # Blocchi CNN identici al modello LSTM
+        # Blocchi CNN identici al modello LSTM (ma ottimizzati)
         self.block1 = nn.Sequential(
             nn.Conv2d(channel, 128, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
             nn.BatchNorm2d(128),
             nn.ReLU(),
+            nn.Dropout2d(p=0.2),
             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
         )
         self.block2 = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(128, 128, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
+            nn.Dropout2d(p=0.2),
             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
         )
         self.block3 = nn.Sequential(
-            nn.Conv2d(256, 512, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
-            nn.BatchNorm2d(512),
+            nn.Conv2d(128, 256, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
+            nn.BatchNorm2d(256),
             nn.ReLU(),
+            nn.Dropout2d(p=0.2),
             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
         )
         self.block4 = nn.Sequential(
-             nn.Conv2d(512, 1024, kernel_size=(3,3), stride=(1,1), padding=(1,1)),
-             nn.BatchNorm2d(1024),
-             nn.ReLU(),
-             nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+            nn.Conv2d(256, 256, kernel_size=(3,3), stride=(1,1), padding=(1,1)),  # Ripristinato a 256
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Dropout2d(p=0.2),
+            nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
         )
 
         # Calcolo dimensione feature per la GRU (identico alla LSTM):
         # Dopo 4 MaxPool (2x2), l'altezza (frequenza) diventa 128 / 16 = 8.
-        # I canali sono diventati 1024.
-        # Quindi ogni step temporale avrà un vettore di: 1024 * 8 = 8192 feature.
-        self.gru_input_size = 1024 * 8
+        # I canali sono diventati 256.
+        # Quindi ogni step temporale avrà un vettore di: 256 * 8 = 2048 feature
+        self.gru_input_size = 256 * 8  # 2048
         self.hidden_size = 128
         self.num_classes = 4  # Ho solo 4 classi di emozioni (Neutral, Happy, Sad, Angry)
 
@@ -60,8 +64,9 @@ class CRNN_BiGRU(nn.Module):
         # Proietta l'output della GRU (256 feature perché bidirezionale) in uno score scalare
         self.attention_linear = nn.Linear(self.hidden_size * 2, 1)
 
-        # Layer di classificazione finale (identico)
-        self.dropout = nn.Dropout(self.dropout_rate)
+        # Layer di classificazione finale con Dropout ridotto (0.3 vs originale)
+        # Con weight_decay=0.001, possiamo permetterci dropout più basso
+        self.dropout = nn.Dropout(0.3)
         self.classifier = nn.Linear(self.hidden_size * 2, self.num_classes)
 
 

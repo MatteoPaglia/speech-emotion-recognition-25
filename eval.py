@@ -1,3 +1,4 @@
+import config as Config
 import torch
 import torch.nn as nn
 from pathlib import Path
@@ -16,47 +17,24 @@ import argparse
 
 # --- ARGPARSE (SCELTA MODELLO) ---
 parser = argparse.ArgumentParser(description='Evaluate Speech Emotion Recognition Model')
-parser.add_argument('--model', type=str, default='crnn_lstm', 
-                    choices=['crnn_lstm', 'lstm', 'crnn_gru', 'gru'],
-                    help='Tipo di modello da valutare (default: crnn_lstm)')
+parser.add_argument('--model', type=str, default='CRNN_BiLSTM', 
+                    choices=['CRNN_BiLSTM', 'CRNN_BiGRU'],
+                    help='Tipo di modello da valutare (default: CRNN_BiLSTM)')
 parser.add_argument('--checkpoint', type=str, default='checkpoints/best_model.pth',
                     help='Percorso del checkpoint del modello (default: checkpoints/best_model.pth)')
 args = parser.parse_args()
 
 MODEL_TYPE = args.model
 
-# --- CONFIGURAZIONE ---
+# --- CONFIGURAZIONE (IMPORTATE DA CONFIG) ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-BATCH_SIZE = 32
-NUM_CLASSES = 4
-TIME_STEPS = 200
-MEL_BANDS = 128
+BATCH_SIZE = Config.BATCH_SIZE_RAVDESS
+NUM_CLASSES = Config.NUM_CLASSES_RAVDESS
+TIME_STEPS = Config.TIME_STEPS_RAVDESS
+MEL_BANDS = Config.MEL_BANDS_RAVDESS
 MODEL_PATH = args.checkpoint
 
 EMOTION_LABELS = ['neutral', 'happy', 'sad', 'angry']
-
-# --- RICERCA PERCORSI DATASET ---
-def find_dataset_paths():
-    """Ricerca i percorsi dei dataset"""
-    possible_paths = [
-        Path('/kaggle/input/'), 
-        Path.home() / '.cache' / 'kagglehub' / 'datasets',
-        Path('/root/.cache/kagglehub/datasets'),
-        Path('/tmp/kagglehub/datasets'),
-        Path('./data'),
-        Path('../data'),
-        Path('../../data'),
-    ]
-    
-    ravdess_path = None
-    
-    for base_path in possible_paths:
-        if base_path.exists():
-            for root, dirs, files in os.walk(base_path):
-                if 'ravdess-emotional-speech-audio' in dirs and not ravdess_path:
-                    ravdess_path = Path(root) / 'ravdess-emotional-speech-audio'
-    
-    return ravdess_path
 
 # --- FUNZIONE DI TESTING ---
 def test_model(model, loader, device):
@@ -162,7 +140,7 @@ if __name__ == "__main__":
     )
     
     # 1. Ricerca dataset
-    ravdess_path = find_dataset_paths()
+    ravdess_path = Path(Config.RAVDESS_PATH) #per local evaluation
     if not ravdess_path or not ravdess_path.exists():
         raise ValueError("❌ RAVDESS non trovato!")
     

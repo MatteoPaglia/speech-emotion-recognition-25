@@ -1,0 +1,99 @@
+_wandb:
+    value:
+        cli_version: 0.23.1
+        e:
+            52n0qbyfxkrrd7ql8qlfuspt27mjoory:
+                args:
+                    - --model
+                    - CRNN_BiLSTM
+                codePath: train.py
+                codePathLocal: train.py
+                cpu_count: 6
+                cpu_count_logical: 12
+                cudaVersion: "13.1"
+                disk:
+                    /:
+                        total: "999626371072"
+                        used: "375797112832"
+                email: pagliarellomatteo@gmail.com
+                executable: d:\Roba da D\Poli\ML Vision\speech-emotion-recognition-25\venv\Scripts\python.exe
+                git:
+                    commit: 1ea119085afa0c258db25c375c3536f53ee0fd2c
+                    remote: git@github.com:MatteoPaglia/speech-emotion-recognition-25.git
+                gpu: NVIDIA GeForce RTX 5060 Ti
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Blackwell
+                      cudaCores: 4608
+                      memoryTotal: "17103323136"
+                      name: NVIDIA GeForce RTX 5060 Ti
+                      uuid: GPU-70516535-3dbd-3832-7534-3d08bf10fb84
+                host: DESKTOP-N73TGGQ
+                memory:
+                    total: "17057173504"
+                os: Windows-10-10.0.19045-SP0
+                program: d:\Roba da D\Poli\ML Vision\speech-emotion-recognition-25\train.py
+                python: CPython 3.10.0
+                root: d:\Roba da D\Poli\ML Vision\speech-emotion-recognition-25
+                startedAt: "2026-01-21T14:31:55.739434Z"
+                writerId: 52n0qbyfxkrrd7ql8qlfuspt27mjoory
+        m: []
+        python_version: 3.10.0
+        t:
+            "1":
+                - 1
+                - 53
+            "2":
+                - 1
+                - 53
+            "3":
+                - 2
+                - 13
+                - 16
+            "4": 3.10.0
+            "5": 0.23.1
+            "8":
+                - 2
+                - 3
+            "12": 0.23.1
+            "13": windows-amd64
+architecture:
+    value: CRNN_BiLSTM
+batch_size:
+    value: 32
+class_weights:
+    value:
+        - 1
+        - 1
+        - 1.5
+        - 1
+dataset:
+    value: RAVDESS
+device:
+    value: cuda
+dropout:
+    value: 0.4
+early_stopping_patience:
+    value: 10
+epochs:
+    value: 100
+learning_rate:
+    value: 0.0005
+mel_bands:
+    value: 128
+num_classes:
+    value: 4
+optimizer:
+    value: Adam
+spec_freq_mask:
+    value: 12
+spec_time_mask:
+    value: 15
+swa_lr:
+    value: 0.0001
+swa_start_epoch:
+    value: 15
+time_steps:
+    value: 90
+weight_decay:
+    value: 0.0001
