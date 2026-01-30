@@ -108,8 +108,8 @@ def validate(model, loader, criterion, device):
 if __name__ == "__main__":
     print(f"Using device: {DEVICE}")
 
-    #ravdess_path = Config.COLAB_RAVDESS_PATH #for colab training
-    ravdess_path = Path(Config.RAVDESS_PATH) #for local training
+    ravdess_path = Config.COLAB_RAVDESS_PATH #for colab training
+    #ravdess_path = Path(Config.RAVDESS_PATH) #for local training
     
     if not ravdess_path or not ravdess_path.exists():
         raise ValueError("❌ RAVDESS non trovato! Verifica il percorso del dataset.")
