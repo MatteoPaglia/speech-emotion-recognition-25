@@ -27,9 +27,12 @@ parser = argparse.ArgumentParser(description='Train Speech Emotion Recognition M
 parser.add_argument('--model', type=str, default='CRNN_BiLSTM', 
                     choices=['CRNN_BiLSTM', 'CRNN_BiGRU'],
                     help='Tipo di modello da utilizzare (default: CRNN_BiLSTM)')
+parser.add_argument('--dataset_path', type=str, default=None, 
+                    help='Percorso assoluto o relativo del dataset RAVDESS')
 args = parser.parse_args()
 
 MODEL_TYPE = args.model
+DATASET_PATH_ARG = args.dataset_path
 # --- 2. CONFIGURAZIONE (IMPORTATE DA CONFIG) ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -108,13 +111,22 @@ def validate(model, loader, criterion, device):
 if __name__ == "__main__":
     print(f"Using device: {DEVICE}")
 
-    ravdess_path = Config.COLAB_RAVDESS_PATH #for colab training
-    #ravdess_path = Path(Config.RAVDESS_PATH) #for local training
+    # LOGICA DI SELEZIONE DEL PATH
+    # 1. Se il path è passato come argomento, usa quello.
+    # 2. Altrimenti, prova i path di default nel Config (fallback).
+    if DATASET_PATH_ARG:
+        ravdess_path = Path(DATASET_PATH_ARG)
+    else:
+        # Fallback intelligente: prova a vedere se esiste quello di Colab, altrimenti usa Config standard
+        if Config.COLAB_RAVDESS_PATH and Config.COLAB_RAVDESS_PATH.exists():
+            ravdess_path = Config.COLAB_RAVDESS_PATH
+        else:
+            ravdess_path = Path(Config.RAVDESS_PATH)
     
     if not ravdess_path or not ravdess_path.exists():
-        raise ValueError("❌ RAVDESS non trovato! Verifica il percorso del dataset.")
+        raise ValueError(f"❌ RAVDESS non trovato in: {ravdess_path}! Verifica il percorso.")
     
-    print(f"\n✅ RAVDESS trovato: {ravdess_path}\n")
+    print(f"\n✅ RAVDESS path impostato su: {ravdess_path}\n")
     
     # Create RAVDESS datasets
     train_RAVDESS_dataset = CustomRAVDESSDataset(
