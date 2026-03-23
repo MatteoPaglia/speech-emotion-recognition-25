@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from tqdm import tqdm
 from pathlib import Path
 import os
 import sys
@@ -174,7 +173,7 @@ if __name__ == "__main__":
     # Ciclo delle Epoche
     best_val_acc = 0.0
     best_swa_val_acc = 0.0
-    early_stopping = SimpleEarlyStopping(patience=10)
+    early_stopping = None ; #SimpleEarlyStopping(patience=10)
     using_swa = False  # Flag per indicare se siamo nella fase SWA
 
     # Genera timestamp per il run (ora italiana UTC+1)
@@ -287,11 +286,11 @@ if __name__ == "__main__":
         })
 
         # Early Stopping
-        early_stopping.step(val_loss)
-        if early_stopping.should_stop:
-            print(f"\n⏹️ Early stopping alla epoca {epoch+1}")
-            break
-
+        if early_stopping:
+            early_stopping.step(val_loss)
+            if early_stopping.should_stop:
+                print(f"\n⏹️ Early stopping alla epoca {epoch+1}")
+                break
     print("="*80)
     
     # Valutazione finale del SWA model

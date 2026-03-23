@@ -203,7 +203,8 @@ if __name__ == "__main__":
     )
     wandb.log({"classification_report": class_metrics})
     
-    plt.show()
+    # plt.show() rimosso - blocca l'esecuzione quando chiamato da subprocess
+    # La confusion matrix è già loggata su W&B
     
     print("\n" + "="*80)
     print("✅ Evaluation Complete!")

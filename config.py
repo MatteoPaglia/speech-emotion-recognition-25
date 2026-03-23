@@ -68,7 +68,7 @@ SPEC_FREQ_MASK_IEMOCAP = 30  # Aumentato da 12: costringe a imparare differenze 
 SPEC_TIME_MASK_IEMOCAP = 15  # Ridotto per preservare feature sottili
 
 # Class Weights Configuration (Neutral, Happy, Sad, Angry)
-CLASS_WEIGHTS_IEMOCAP = [0.8, 0.8, 1.2, 2.0]  # Neutral 1.0 evita falsi Happy, Sad 2.0 per aiutarlo
+CLASS_WEIGHTS_IEMOCAP = [1.0, 1.0, 1.5, 1.0]  # Neutral 1.0 evita falsi Happy, Sad 2.0 per aiutarlo
 
 # SWA Configuration
 SWA_START_EPOCH_IEMOCAP = 15  # Inizia SWA dopo 15 epoche

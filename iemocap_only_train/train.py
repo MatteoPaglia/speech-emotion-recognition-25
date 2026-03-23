@@ -282,10 +282,11 @@ if __name__ == "__main__":
         })
 
         # Early Stopping
-        early_stopping.step(val_loss)
-        if early_stopping.should_stop:
-            print(f"\n⏹️ Early stopping alla epoca {epoch+1}")
-            break
+        if early_stopping:
+            early_stopping.step(val_loss)
+            if early_stopping.should_stop:
+                print(f"\n⏹️ Early stopping alla epoca {epoch+1}")
+                break
 
     print("="*80)
     
