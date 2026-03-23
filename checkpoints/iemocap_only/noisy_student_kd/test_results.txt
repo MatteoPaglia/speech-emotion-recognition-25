@@ -1,0 +1,27 @@
+================================================================================
+NOISY STUDENT KNOWLEDGE DISTILLATION - TEST SET EVALUATION
+================================================================================
+
+Overall Accuracy: 51.30%
+Weighted Precision: 0.5302
+Weighted Recall: 0.5130
+Weighted F1-Score: 0.4744
+
+Per-Class Metrics:
+              precision    recall  f1-score   support
+
+     Neutral       0.47      0.84      0.60       287
+       Happy       0.59      0.28      0.38       280
+         Sad       0.66      0.43      0.52       133
+       Angry       0.00      0.00      0.00        31
+
+    accuracy                           0.51       731
+   macro avg       0.43      0.39      0.37       731
+weighted avg       0.53      0.51      0.47       731
+
+
+Confusion Matrix:
+Neutral   : [241  24  22   0]
+Happy     : [196  77   7   0]
+Sad       : [68  8 57  0]
+Angry     : [ 9 21  1  0]
