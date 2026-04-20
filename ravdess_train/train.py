@@ -18,7 +18,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import config as Config
 from dataset.custom_ravdess_dataset import CustomRAVDESSDataset
 from models import get_model
-from utils.training_utils import SimpleEarlyStopping, save_swa_checkpoint, update_bn_custom
+from utils.training_utils import save_swa_checkpoint, update_bn_custom
 
 
 # --- 1. ARGPARSE (SCELTA MODELLO) ---
@@ -144,8 +144,9 @@ if __name__ == "__main__":
     train_RAVDESS_dataloader = DataLoader(train_RAVDESS_dataset, batch_size=BATCH_SIZE, shuffle=True)
     val_RAVDESS_dataloader = DataLoader(val_RAVDESS_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-    # Inizializzazione Modello
-    model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS, dropout=DROPOUT).to(DEVICE)
+    # Inizializzazione Modello (Commentato 3 canali, ora impostato a 1 canale)
+    # model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS, dropout=DROPOUT, channel=3).to(DEVICE)
+    model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS, dropout=DROPOUT, channel=1).to(DEVICE)
     
     # Stampa dell'architettura del modello
     print("\n" + "="*80)
@@ -185,7 +186,6 @@ if __name__ == "__main__":
     # Ciclo delle Epoche
     best_val_acc = 0.0
     best_swa_val_acc = 0.0
-    early_stopping = None ; #SimpleEarlyStopping(patience=10)
     using_swa = False  # Flag per indicare se siamo nella fase SWA
 
     # Genera timestamp per il run (ora italiana UTC+1)
@@ -207,7 +207,6 @@ if __name__ == "__main__":
             "optimizer": "Adam",
             "weight_decay": WEIGHT_DECAY,
             "loss_function": "CrossEntropyLoss",
-            "early_stopping_patience": early_stopping.patience,
             "device": str(DEVICE),
             "swa_start_epoch": SWA_START_EPOCH,
             "swa_lr": SWA_LR,
@@ -230,7 +229,6 @@ if __name__ == "__main__":
     print(f"Learning Rate:         {LEARNING_RATE}")
     print(f"Weight Decay (L2):     {WEIGHT_DECAY}")
     print(f"Number of Epochs:      {NUM_EPOCHS}")
-    print(f"Early Stopping Patience: {early_stopping.patience}")
     print(f"\nModello:")
     print(f"  - Num Classes:       {NUM_CLASSES}")
     print(f"  - Time Steps:        {TIME_STEPS}")
@@ -297,12 +295,6 @@ if __name__ == "__main__":
             "val_accuracy": val_acc
         })
 
-        # Early Stopping
-        if early_stopping:
-            early_stopping.step(val_loss)
-            if early_stopping.should_stop:
-                print(f"\n⏹️ Early stopping alla epoca {epoch+1}")
-                break
     print("="*80)
     
     # Valutazione finale del SWA model

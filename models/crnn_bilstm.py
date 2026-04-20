@@ -2,7 +2,8 @@ from torch import nn
 import torch
 
 class CRNN_BiLSTM(nn.Module):
-    def __init__(self, batch_size, time_steps, mel_band=128, channel=1, dropout=0.4):
+    # def __init__(self, batch_size, time_steps, mel_band=128, channel=3, dropout=0.4): # Versione a 3 canali (Delta, Delta-Delta)
+    def __init__(self, batch_size, time_steps, mel_band=128, channel=1, dropout=0.4): # Versione base a 1 canale
         super().__init__()
         self.dropout_rate = dropout
         

@@ -302,26 +302,36 @@ class CustomIEMOCAPDataset(Dataset):
     
     def _process_waveform(self, waveform):
         """
-        Processa la waveform per renderla esattamente 3 secondi (identica a RAVDESS):
-        - Audio troppo lungo: CENTER CROP (prendi parte centrale)
-        - Audio troppo corto: ZERO PADDING (aggiungi silenzio)
-        
-        Args:
-            waveform (torch.Tensor): Tensore audio [1, num_samples]
-        
-        Returns:
-            torch.Tensor: Waveform processata [1, target_samples] (48000 campioni @ 16kHz = 3s)
+        Processa la waveform usando Peak-Centered Crop con Shift Dinamico:
+        - Trova il picco massimo di volume nell'audio.
+        - Cerca di prendere i 3 secondi (target_len) centrati sul picco.
+        - Se il picco è troppo vicino a un bordo, fa slittare la finestra verso 
+          il lato opposto per catturare audio reale e azzerare il padding inutile.
+        - Applica padding solo se l'audio totale è < 3 secondi.
         """
         c, n = waveform.shape
-        target_len = self.target_samples  # 48000
+        target_len = self.target_samples  # 48000 (3 secondi)
         
         if n > target_len:
-            # Audio troppo lungo: CENTER CROP (prendi la parte centrale)
-            start = (n - target_len) // 2
-            waveform = waveform[:, start:start+target_len]
-                
+            # 1. Trova l'indice del picco massimo (guardando il valore assoluto dell'ampiezza)
+            peak_idx = torch.argmax(torch.abs(waveform[0])).item()
+            
+            # 2. Calcola lo start_idx "ideale" per tenere il picco esattamente al centro
+            half_window = target_len // 2
+            ideal_start = peak_idx - half_window
+            
+            # 3. APPLICA LO SHIFT DINAMICO (La regola che hai richiesto)
+            # - Se ideal_start < 0 (picco a inizio file), blocca la partenza a 0.
+            # - Se ideal_start + target_len > n (picco a fine file), arretra la 
+            #   partenza al punto esatto (n - target_len) per includere tutto l'audio finale.
+            actual_start = max(0, min(ideal_start, n - target_len))
+            
+            # 4. Ritaglia la porzione
+            waveform = waveform[:, actual_start : actual_start + target_len]
+            
         elif n < target_len:
-            # Audio troppo corto: ZERO PADDING (aggiungi silenzio alla fine)
+            # Se l'audio intero dura meno di 3 secondi, il padding è purtroppo inevitabile.
+            # Aggiungiamo silenzio alla fine.
             padding_needed = target_len - n
             waveform = torch.nn.functional.pad(waveform, (0, padding_needed), mode='constant', value=0)
             

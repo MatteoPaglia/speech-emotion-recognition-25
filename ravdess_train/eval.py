@@ -165,7 +165,10 @@ if __name__ == "__main__":
     if not Path(MODEL_PATH).exists():
         raise FileNotFoundError(f"❌ Modello non trovato: {MODEL_PATH}")
     
-    model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS)
+    # Inizializzazione Modello (Commentato 3 canali, ora impostato a 1 canale)
+    # model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS, channel=3)
+    model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS, channel=1)
+    
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     model = model.to(DEVICE)
     print(f"✅ Modello caricato da {MODEL_PATH}\n")

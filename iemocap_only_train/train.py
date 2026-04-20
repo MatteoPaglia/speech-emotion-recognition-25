@@ -128,8 +128,8 @@ if __name__ == "__main__":
     train_IEMOCAP_dataloader = DataLoader(train_IEMOCAP_dataset, batch_size=BATCH_SIZE, shuffle=True)
     val_IEMOCAP_dataloader = DataLoader(val_IEMOCAP_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-    # Inizializzazione Modello
-    model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS, dropout=DROPOUT).to(DEVICE)
+    # Inizializzazione Modello (Forza 1 canale per IEMOCAP)
+    model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS, dropout=DROPOUT, channel=1).to(DEVICE)
     
     # Stampa dell'architettura del modello
     print("\n" + "="*80)
