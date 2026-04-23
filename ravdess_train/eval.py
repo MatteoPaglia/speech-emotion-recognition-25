@@ -132,7 +132,7 @@ if __name__ == "__main__":
     # Inizializza W&B per evaluation
     wandb.init(
         project="speech-emotion-recognition",
-        name=f"eval_{timestamp}",
+        name=f"eval_ravdess_final_{timestamp}",
         config={
             "batch_size": BATCH_SIZE,
             "num_classes": NUM_CLASSES,

@@ -146,8 +146,8 @@ if __name__ == "__main__":
     # Normalizza i pesi (somma = 1)
     class_weights = class_weights / class_weights.sum()
 
-    # CrossEntropyLoss con class weights per bilanciare il dataset
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    # CrossEntropyLoss con class weights per bilanciare il dataset e label smoothing
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
     
     # Adam optimizer con weight decay aumentato per ridurre overfitting e oscillazioni
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
@@ -169,7 +169,6 @@ if __name__ == "__main__":
     # Ciclo delle Epoche
     best_val_acc = 0.0
     best_swa_val_acc = 0.0
-    early_stopping = SimpleEarlyStopping(patience=10)
     using_swa = False  # Flag per indicare se siamo nella fase SWA
 
     # Genera timestamp per il run (ora italiana UTC+1)
@@ -178,7 +177,7 @@ if __name__ == "__main__":
     # --- INIZIALIZZA WANDB ---
     wandb.init(
         project="speech-emotion-recognition",
-        name=f"train_{timestamp}",
+        name=f"train_iemocap_{timestamp}",
         config={
             "learning_rate": LEARNING_RATE,
             "batch_size": BATCH_SIZE,
@@ -191,7 +190,6 @@ if __name__ == "__main__":
             "optimizer": "Adam",
             "weight_decay": WEIGHT_DECAY,
             "loss_function": "CrossEntropyLoss",
-            "early_stopping_patience": early_stopping.patience,
             "device": str(DEVICE),
             "swa_start_epoch": SWA_START_EPOCH,
             "swa_lr": SWA_LR,
@@ -214,7 +212,7 @@ if __name__ == "__main__":
     print(f"Learning Rate:         {LEARNING_RATE}")
     print(f"Weight Decay (L2):     {WEIGHT_DECAY}")
     print(f"Number of Epochs:      {NUM_EPOCHS}")
-    print(f"Early Stopping Patience: {early_stopping.patience}")
+
     print(f"\nModello:")
     print(f"  - Num Classes:       {NUM_CLASSES}")
     print(f"  - Time Steps:        {TIME_STEPS}")
@@ -280,13 +278,6 @@ if __name__ == "__main__":
             "val_loss": val_loss,
             "val_accuracy": val_acc
         })
-
-        # Early Stopping
-        if early_stopping:
-            early_stopping.step(val_loss)
-            if early_stopping.should_stop:
-                print(f"\n⏹️ Early stopping alla epoca {epoch+1}")
-                break
 
     print("="*80)
     

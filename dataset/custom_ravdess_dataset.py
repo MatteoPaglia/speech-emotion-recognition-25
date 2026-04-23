@@ -45,7 +45,7 @@ class CustomRAVDESSDataset(Dataset):
     MODALITY_AUDIO_ONLY = '03'  # Solo audio (no video)
     VOCAL_CHANNEL_SPEECH = '01'  # Solo speech (no song)
     
-    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=2048, target_hop_length=512, target_n_mels=128, use_silence_trimming=True, use_avg_audio=True, spec_freq_mask=12, spec_time_mask=15):
+    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=1024, target_hop_length=256, target_n_mels=128, use_silence_trimming=True, use_avg_audio=True, spec_freq_mask=12, spec_time_mask=15):
         """
         Args:
             dataset_root (str): Path to the RAVDESS dataset root folder
@@ -77,10 +77,11 @@ class CustomRAVDESSDataset(Dataset):
         # Default target_samples 
         self.target_samples = int(target_length * self.target_sample_rate) # 48000 (3 secondi @ 16kHz)
         
-        # Trasformazione MelSpectrogram (Identica a IEMOCAP per coerenza)
+        # Trasformazione MelSpectrogram
         self.mel_transform = torchaudio.transforms.MelSpectrogram(
             sample_rate=self.target_sample_rate,
             n_fft=self.n_fft,
+            win_length=1024,
             hop_length=self.hop_length,
             n_mels=self.n_mels
         )

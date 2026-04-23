@@ -23,7 +23,7 @@ NUM_CLASSES_RAVDESS = 4  # Neutral, Happy, Sad, Angry
 # Audio Configuration
 # Audio fissi a 3 secondi @ 16kHz = 48000 campioni
 # MelSpectrogram: hop_length=512 → frame = (48000 - 2048) / 512 + 1 ≈ 90
-TIME_STEPS_RAVDESS = 90
+TIME_STEPS_RAVDESS = 188#90
 MEL_BANDS_RAVDESS = 128
 
 # Model Configuration
@@ -56,8 +56,8 @@ NUM_CLASSES_IEMOCAP = 4  # Neutral, Happy, Sad, Angry
 
 # Audio Configuration
 # Audio fissi a 3 secondi @ 16kHz = 48000 campioni
-# MelSpectrogram: hop_length=512 → frame = (48000 - 2048) / 512 + 1 ≈ 90
-TIME_STEPS_IEMOCAP = 90
+# MelSpectrogram: hop_length=256 → frame = (48000 - 1024) / 256 + 1 ≈ 188
+TIME_STEPS_IEMOCAP = 188
 MEL_BANDS_IEMOCAP = 128
 
 # Model Configuration

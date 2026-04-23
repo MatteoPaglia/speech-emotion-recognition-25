@@ -20,7 +20,6 @@ from dataset.custom_ravdess_dataset import CustomRAVDESSDataset
 from models import get_model
 from utils.training_utils import save_swa_checkpoint, update_bn_custom
 
-
 # --- 1. ARGPARSE (SCELTA MODELLO) ---
 parser = argparse.ArgumentParser(description='Train Speech Emotion Recognition Model')
 parser.add_argument('--model', type=str, default='CRNN_BiLSTM', 
@@ -140,9 +139,9 @@ if __name__ == "__main__":
     print(f"Val samples: {len(val_RAVDESS_dataset)}")
 
     # Create RAVDESS DataLoaders
-    
-    train_RAVDESS_dataloader = DataLoader(train_RAVDESS_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_RAVDESS_dataloader = DataLoader(val_RAVDESS_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    # Aggiunti num_workers=4 e pin_memory=True per velocizzare il caricamento e l'elaborazione dei dati
+    train_RAVDESS_dataloader = DataLoader(train_RAVDESS_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, pin_memory=True)
+    val_RAVDESS_dataloader = DataLoader(val_RAVDESS_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
 
     # Inizializzazione Modello (Commentato 3 canali, ora impostato a 1 canale)
     # model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS, dropout=DROPOUT, channel=3).to(DEVICE)
@@ -163,8 +162,9 @@ if __name__ == "__main__":
     # Normalizza i pesi (somma = 1)
     class_weights = class_weights / class_weights.sum()
 
-    # CrossEntropyLoss con class weights per bilanciare il dataset
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    # Scegli la Loss Function
+    # CrossEntropyLoss con class weights per bilanciare il dataset e label smoothing
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
     
     # Adam optimizer con weight decay aumentato per ridurre overfitting e oscillazioni
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
@@ -194,7 +194,7 @@ if __name__ == "__main__":
     # --- INIZIALIZZA WANDB ---
     wandb.init(
         project="speech-emotion-recognition",
-        name=f"train_{timestamp}",
+        name=f"train_ravdess_final_{timestamp}",
         config={
             "learning_rate": LEARNING_RATE,
             "batch_size": BATCH_SIZE,
