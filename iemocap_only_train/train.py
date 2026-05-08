@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from datetime import datetime, timedelta
 import wandb
 from torch.optim.swa_utils import AveragedModel, SWALR, update_bn
+from sklearn.model_selection import GroupKFold
 import argparse
 
 # Aggiungi project root al path per gli import
@@ -101,210 +102,182 @@ def validate(model, loader, criterion, device):
 # --- 6. MAIN LOOP ---
 if __name__ == "__main__":
     print(f"Using device: {DEVICE}")
-    
-    # Inizializza dataset e dataloader
-    iemocap_path = PROJECT_ROOT / Config.IEMOCAP_PATH
+
+    # LOGICA DI SELEZIONE DEL PATH
+    if DATASET_PATH_ARG:
+        iemocap_path = Path(DATASET_PATH_ARG)
+    else:
+        if Config.COLAB_IEMOCAP_PATH and Config.COLAB_IEMOCAP_PATH.exists():
+            iemocap_path = Config.COLAB_IEMOCAP_PATH
+        else:
+            iemocap_path = Path(Config.IEMOCAP_PATH)
     
     if not iemocap_path or not iemocap_path.exists():
-        raise ValueError("❌ IEMOCAP non trovato! Verifica il percorso del dataset.")
+        raise ValueError(f"❌ IEMOCAP non trovato in: {iemocap_path}! Verifica il percorso.")
     
-    print(f"\n✅ IEMOCAP trovato: {iemocap_path}\n")
+    print(f"\n✅ IEMOCAP path impostato su: {iemocap_path}\n")
     
-    # Create IEMOCAP datasets
-    train_IEMOCAP_dataset = CustomIEMOCAPDataset(
-        dataset_root=str(iemocap_path), 
-        split='train',
-        spec_freq_mask=SPEC_FREQ_MASK,
-        spec_time_mask=SPEC_TIME_MASK
-    )
+    # SCAN DEI FILE E DEGLI SPEAKER
+    all_files, speaker_ids = CustomIEMOCAPDataset.get_all_speakers(iemocap_path)
+    if not all_files:
+        raise ValueError("Nessun file trovato durante lo scan del dataset IEMOCAP.")
     
-    val_IEMOCAP_dataset = CustomIEMOCAPDataset(dataset_root=str(iemocap_path), split='validation')
-    
-    print(f"Train samples: {len(train_IEMOCAP_dataset)}")
-    print(f"Val samples: {len(val_IEMOCAP_dataset)}")
+    print(f"Trovati {len(all_files)} file validi appartenenti a {len(set(speaker_ids))} speaker.")
 
-    # Create IEMOCAP DataLoaders
-    
-    train_IEMOCAP_dataloader = DataLoader(train_IEMOCAP_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_IEMOCAP_dataloader = DataLoader(val_IEMOCAP_dataset, batch_size=BATCH_SIZE, shuffle=False)
-
-    # Inizializzazione Modello (Forza 1 canale per IEMOCAP)
-    model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS, dropout=DROPOUT, channel=1).to(DEVICE)
-    
-    # Stampa dell'architettura del modello
-    print("\n" + "="*80)
-    print("🏗️ ARCHITETTURA DEL MODELLO")
-    print("="*80)
-    print(model)
-    print("="*80 + "\n")
-    
-    # Class weights per bilanciare le classi
-    # Ordine delle classi (da EMOTION_ID_MAP in custom_iemocap_dataset.py):
-    # 0: Neutral | 1: Happy | 2: Sad | 3: Angry
-    # Sad ha peso maggiore perché è la classe più difficile da riconoscere
-    class_weights = torch.tensor(CLASS_WEIGHTS, dtype=torch.float32).to(DEVICE)
-    # Normalizza i pesi (somma = 1)
-    class_weights = class_weights / class_weights.sum()
-
-    # CrossEntropyLoss con class weights per bilanciare il dataset e label smoothing
-    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
-    
-    # Adam optimizer con weight decay aumentato per ridurre overfitting e oscillazioni
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-
-    # AGGIUNTA: Scheduler per ridurre il LR quando la loss si appiattisce
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 
-        mode='min', 
-        factor=0.5,     # Dimezza il LR
-        patience=3      # Se non migliora per 3 epoche
-    )
-    
-    # AGGIUNTA: Stochastic Weight Averaging (SWA)
-    # SWA calcola la media dei pesi del modello durante il training
-    # Questo porta a modelli con migliore generalizzazione
-    swa_model = AveragedModel(model)
-    swa_scheduler = SWALR(optimizer, swa_lr=SWA_LR)
-
-    # Ciclo delle Epoche
-    best_val_acc = 0.0
-    best_swa_val_acc = 0.0
-    using_swa = False  # Flag per indicare se siamo nella fase SWA
-
-    # Genera timestamp per il run (ora italiana UTC+1)
+    # Genera un ID del gruppo per W&B CV
     timestamp = (datetime.now() + timedelta(hours=1)).strftime("%Y%m%d_%H%M%S")
+    cv_group_id = f"cv-iemocap-{timestamp}"
     
-    # --- INIZIALIZZA WANDB ---
-    wandb.init(
-        project="speech-emotion-recognition",
-        name=f"train_iemocap_{timestamp}",
-        config={
-            "learning_rate": LEARNING_RATE,
-            "batch_size": BATCH_SIZE,
-            "epochs": NUM_EPOCHS,
-            "num_classes": NUM_CLASSES,
-            "time_steps": TIME_STEPS,
-            "mel_bands": MEL_BANDS,
-            "architecture": MODEL_TYPE,
-            "dataset": "IEMOCAP",
-            "optimizer": "Adam",
-            "weight_decay": WEIGHT_DECAY,
-            "loss_function": "CrossEntropyLoss",
-            "device": str(DEVICE),
-            "swa_start_epoch": SWA_START_EPOCH,
-            "swa_lr": SWA_LR,
-            # Model hyperparameters
-            "dropout": DROPOUT,
-            # Augmentation hyperparameters
-            "spec_freq_mask": SPEC_FREQ_MASK,
-            "spec_time_mask": SPEC_TIME_MASK,
-            # Class weights
-            "class_weights": CLASS_WEIGHTS
-        }
-    )
-    
-    # --- STAMPA IPERPARAMETRI ---
-    print("\n" + "="*80)
-    print("🔧 IPERPARAMETRI DI TRAINING")
-    print("="*80)
-    print(f"Device:                {DEVICE}")
-    print(f"Batch Size:            {BATCH_SIZE}")
-    print(f"Learning Rate:         {LEARNING_RATE}")
-    print(f"Weight Decay (L2):     {WEIGHT_DECAY}")
-    print(f"Number of Epochs:      {NUM_EPOCHS}")
+    fold_results_reg = []
+    fold_results_swa = []
 
-    print(f"\nModello:")
-    print(f"  - Num Classes:       {NUM_CLASSES}")
-    print(f"  - Time Steps:        {TIME_STEPS}")
-    print(f"  - Mel Bands:         {MEL_BANDS}")
-    print(f"\nOptimizer:             Adam")
-    print(f"Loss Function:         CrossEntropyLoss")
-    print(f"Train Samples:         {len(train_IEMOCAP_dataset)}")
-    print(f"Val Samples:           {len(val_IEMOCAP_dataset)}")
-    print("="*80 + "\n")
+    # Istanzia iteratore GroupKFold
+    gkf = GroupKFold(n_splits=N_SPLITS)
 
-    print("\n" + "="*80)
-    print(f"{'Epoch':<8} {'Train Loss':<15} {'Train Acc':<15} {'Val Loss':<15} {'Val Acc':<15}")
-    print("="*80)
-    
-    for epoch in range(NUM_EPOCHS):
-        # Train
-        train_loss, train_acc = train_one_epoch(model, train_IEMOCAP_dataloader, criterion, optimizer, DEVICE)
+    for fold, (train_idx, val_idx) in enumerate(gkf.split(all_files, groups=speaker_ids)):
+        fold_num = fold + 1
+        print("\n" + "="*80)
+        print(f"🚀 INIZIO FOLD {fold_num}/{N_SPLITS}")
+        print("="*80)
+
+        # Ricava gli ID univoci degli speaker di train e val per questo fold
+        train_speakers = set([speaker_ids[idx] for idx in train_idx])
+        val_speakers = set([speaker_ids[idx] for idx in val_idx])
         
-        # Validation
-        val_loss, val_acc = validate(model, val_IEMOCAP_dataloader, criterion, DEVICE)
+        print(f"Speakers Train ({len(train_speakers)}): {sorted(list(train_speakers))}")
+        print(f"Speakers Val ({len(val_speakers)}): {sorted(list(val_speakers))}")
 
-        # Stampa compatta di questa epoca
-        epoch_marker = ""
-        if val_acc > best_val_acc:
-            epoch_marker = "⭐"
-            best_val_acc = val_acc
-            checkpoint_path = CHECKPOINT_DIR / "best_model.pth"
-            torch.save(model.state_dict(), str(checkpoint_path))
+        # Istanzia i dataset usando il parametro `allowed_speakers`
+        train_dataset = CustomIEMOCAPDataset(
+            dataset_root=str(iemocap_path),
+            allowed_speakers=train_speakers,
+            is_train=True,
+            spec_freq_mask=SPEC_FREQ_MASK,
+            spec_time_mask=SPEC_TIME_MASK
+        )
+        val_dataset = CustomIEMOCAPDataset(
+            dataset_root=str(iemocap_path),
+            allowed_speakers=val_speakers,
+            is_train=False
+        )
+
+        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, pin_memory=True)
+        val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
+
+        # RE-INIZIALIZZA MODELLO E OTTIMIZZATORE (IMPORTANTE PER NON LEAKARE PARAMS)
+        model = get_model(MODEL_TYPE, batch_size=BATCH_SIZE, time_steps=TIME_STEPS, dropout=DROPOUT, channel=1).to(DEVICE)
         
-        print(f"{epoch+1:<8} {train_loss:<15.4f} {train_acc:<15.2f}% {val_loss:<15.4f} {val_acc:<15.2f}% {epoch_marker}")
+        class_weights = torch.tensor(CLASS_WEIGHTS, dtype=torch.float32).to(DEVICE)
+        class_weights = class_weights / class_weights.sum()
+        criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
+        optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
-        # LOGICA SWA
-        if epoch >= SWA_START_EPOCH:
-            if not using_swa:
-                print(f"\n🔄 SWA attivato dalla epoca {epoch+1}\n")
-                using_swa = True
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+        swa_model = AveragedModel(model)
+        swa_scheduler = SWALR(optimizer, swa_lr=SWA_LR)
+
+        # INIZIALIZZA WANDB per il Fold
+        run_name = f"fold_{fold_num}_{MODEL_TYPE}"
+        wandb.init(
+            project="speech-emotion-recognition",
+            group=cv_group_id,
+            name=run_name,
+            reinit=True,
+            config={
+                "fold": fold_num,
+                "train_speakers": sorted(list(train_speakers)),
+                "val_speakers": sorted(list(val_speakers)),
+                "learning_rate": LEARNING_RATE,
+                "batch_size": BATCH_SIZE,
+                "epochs": NUM_EPOCHS,
+                "num_classes": NUM_CLASSES,
+                "time_steps": TIME_STEPS,
+                "mel_bands": MEL_BANDS,
+                "architecture": MODEL_TYPE,
+                "dataset": "IEMOCAP_CV",
+                "optimizer": "Adam",
+                "weight_decay": WEIGHT_DECAY,
+                "loss_function": "CrossEntropyLoss",
+                "swa_start_epoch": SWA_START_EPOCH,
+                "swa_lr": SWA_LR,
+                "dropout": DROPOUT,
+                "spec_freq_mask": SPEC_FREQ_MASK,
+                "spec_time_mask": SPEC_TIME_MASK,
+                "class_weights": CLASS_WEIGHTS
+            }
+        )
+
+        best_val_acc = 0.0
+        best_swa_val_acc = 0.0
+        using_swa = False
+
+        print(f"\nTraining...")
+        for epoch in range(NUM_EPOCHS):
+            train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
+            val_loss, val_acc = validate(model, val_loader, criterion, DEVICE)
+
+            epoch_marker = ""
+            if val_acc > best_val_acc:
+                epoch_marker = "⭐"
+                best_val_acc = val_acc
+                torch.save(model.state_dict(), str(CHECKPOINT_DIR / f"best_model_fold_{fold_num}.pth"))
             
-            swa_model.update_parameters(model)
-            swa_scheduler.step()
+            print(f"Ep [{epoch+1:<2}/{NUM_EPOCHS}] T_loss: {train_loss:.3f} | T_acc: {train_acc:.1f}% | V_loss: {val_loss:.3f} | V_acc: {val_acc:.1f}% {epoch_marker}")
+
+            if epoch >= SWA_START_EPOCH:
+                if not using_swa:
+                    using_swa = True
+                
+                swa_model.update_parameters(model)
+                swa_scheduler.step()
+                
+                if (epoch + 1) % 5 == 0:
+                    update_bn_custom(train_loader, swa_model, DEVICE)
+                    swa_val_loss, swa_val_acc = validate(swa_model, val_loader, criterion, DEVICE)
+                    
+                    wandb.log({
+                        "fold": fold_num,
+                        "epoch": epoch + 1,
+                        "swa_val_loss": swa_val_loss,
+                        "swa_val_accuracy": swa_val_acc
+                    })
+                    
+                    if swa_val_acc > best_swa_val_acc:
+                        best_swa_val_acc = swa_val_acc
+                        save_swa_checkpoint(swa_model, str(CHECKPOINT_DIR / f"best_swa_model_fold_{fold_num}.pth"))
+            else:
+                scheduler.step(val_loss)
+
+            wandb.log({
+                "fold": fold_num,
+                "epoch": epoch + 1,
+                "train_loss": train_loss,
+                "train_accuracy": train_acc,
+                "val_loss": val_loss,
+                "val_accuracy": val_acc
+            })
             
-            if (epoch + 1) % 5 == 0:
-                update_bn_custom(train_IEMOCAP_dataloader, swa_model, DEVICE)
-                swa_val_loss, swa_val_acc = validate(swa_model, val_IEMOCAP_dataloader, criterion, DEVICE)
-                print(f"  SWA: {swa_val_loss:.4f} loss | {swa_val_acc:.2f}% acc")
-                
-                wandb.log({
-                    "swa_val_loss": swa_val_loss,
-                    "swa_val_accuracy": swa_val_acc
-                })
-                
-                if swa_val_acc > best_swa_val_acc:
-                    best_swa_val_acc = swa_val_acc
-                    swa_checkpoint_path = CHECKPOINT_DIR / "best_swa_model.pth"
-                    save_swa_checkpoint(swa_model, str(swa_checkpoint_path))
-        else:
-            scheduler.step(val_loss)
-
-        # Log metriche su W&B
-        wandb.log({
-            "epoch": epoch + 1,
-            "train_loss": train_loss,
-            "train_accuracy": train_acc,
-            "val_loss": val_loss,
-            "val_accuracy": val_acc
-        })
-
-    print("="*80)
-    
-    # Valutazione finale del SWA model
-    if using_swa:
-        print(f"\n🔄 Valutazione SWA finale...")
-        update_bn_custom(train_IEMOCAP_dataloader, swa_model, DEVICE)
-        final_swa_val_loss, final_swa_val_acc = validate(swa_model, val_IEMOCAP_dataloader, criterion, DEVICE)
-        print(f"  Final SWA: {final_swa_val_loss:.4f} loss | {final_swa_val_acc:.2f}% acc")
+        if using_swa:
+            update_bn_custom(train_loader, swa_model, DEVICE)
+            _, final_swa_val_acc = validate(swa_model, val_loader, criterion, DEVICE)
+            if final_swa_val_acc > best_swa_val_acc:
+                best_swa_val_acc = final_swa_val_acc
         
-        if final_swa_val_acc > best_swa_val_acc:
-            swa_checkpoint_path = CHECKPOINT_DIR / "best_swa_model.pth"
-            save_swa_checkpoint(swa_model, str(swa_checkpoint_path))
-            best_swa_val_acc = final_swa_val_acc
+        fold_results_reg.append(best_val_acc)
+        fold_results_swa.append(best_swa_val_acc)
+        
+        print(f"\n✅ Fine Fold {fold_num} | Best Val Acc: {best_val_acc:.2f}% | Best SWA Acc: {best_swa_val_acc:.2f}%")
+        wandb.finish()
+
+    reg_mean, reg_std = np.mean(fold_results_reg), np.std(fold_results_reg)
+    swa_mean, swa_std = np.mean(fold_results_swa), np.std(fold_results_swa)
 
     print("\n" + "="*80)
-    print("✅ TRAINING COMPLETED")
+    print(f"🏆 RISULTATI CROSS-VALIDATION IEMOCAP ({N_SPLITS} Folds)")
     print("="*80)
-    print(f"Best Validation Accuracy (Regular):  {best_val_acc:.2f}%")
-    if using_swa:
-        print(f"Best Validation Accuracy (SWA):      {best_swa_val_acc:.2f}%")
-        print(f"SWA Improvement:                     {(best_swa_val_acc - best_val_acc):+.2f}%")
-        print(f"\n📦 Recommended checkpoint: best_swa_model_iemocap_only.pth")
-    else:
-        print(f"\n📦 Recommended checkpoint: best_model_iemocap_only.pth")
+    for i in range(N_SPLITS):
+        print(f"Fold {i+1}: Regular Acc = {fold_results_reg[i]:.2f}%, SWA Acc = {fold_results_swa[i]:.2f}%")
+    print("-" * 80)
+    print(f"Metrics (Regular): MEAN = {reg_mean:.2f}%, STD = {reg_std:.2f}%")
+    print(f"Metrics (SWA):     MEAN = {swa_mean:.2f}%, STD = {swa_std:.2f}%")
     print("="*80 + "\n")
-
-    wandb.finish()
-    
-

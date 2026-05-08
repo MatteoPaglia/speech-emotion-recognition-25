@@ -45,28 +45,27 @@ class CustomRAVDESSDataset(Dataset):
     MODALITY_AUDIO_ONLY = '03'  # Solo audio (no video)
     VOCAL_CHANNEL_SPEECH = '01'  # Solo speech (no song)
     
-    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=1024, target_hop_length=256, target_n_mels=128, use_silence_trimming=True, use_avg_audio=True, spec_freq_mask=12, spec_time_mask=15):
+    def __init__(self, dataset_root, allowed_speakers=None, is_train=True, transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=1024, target_hop_length=256, target_n_mels=128, use_silence_trimming=True, use_avg_audio=True, spec_freq_mask=12, spec_time_mask=15, add_gaussian_noise_snr=None):
         """
         Args:
             dataset_root (str): Path to the RAVDESS dataset root folder
-            split (str): 'train', 'validation', or 'test'
+            allowed_speakers (list or set): List of speaker IDs to include (e.g., ['01', '02']). Returns all if None.
+            is_train (bool): If True, applies data augmentation
             transform (callable, optional): Optional transform to be applied on audio waveform
             use_silence_trimming (bool): Se True, applica silence trimming ai dati
             spec_freq_mask (int): Parametro per FrequencyMasking in SpecAugment
             spec_time_mask (int): Parametro per TimeMasking in SpecAugment
-            
-        Split fisso:
-            - Train: Actors 01-20 (10M + 10F)
-            - Validation: Actors 21-22 (1M + 1F)
-            - Test: Actors 23-24 (1M + 1F)
+            add_gaussian_noise_snr (tuple): SNR range per Additive Gaussian Noise, es (10, 20)
         """
         self.dataset_root = Path(dataset_root)
-        self.split = split
+        self.allowed_speakers = set(str(s).zfill(2) for s in allowed_speakers) if allowed_speakers is not None else None
+        self.is_train = is_train
         self.transform = transform
         self.use_silence_trimming = use_silence_trimming
         self.use_avg_audio = use_avg_audio
         self.spec_freq_mask = spec_freq_mask
         self.spec_time_mask = spec_time_mask
+        self.add_gaussian_noise_snr = add_gaussian_noise_snr
 
         #hyperparameters per l'estrazione delle feature
         self.target_sample_rate = target_sample_rate
@@ -89,7 +88,7 @@ class CustomRAVDESSDataset(Dataset):
         
         # SpecAugment per Training (maschera parti dello spettrogramma)
         # Solo per training, non per validation/test
-        if self.split == 'train':
+        if self.is_train:
             # STRATEGIA LEGGERA: Ridotto per preservare feature sottili (es. Sad)
             self.spec_augment = torch.nn.Sequential(
                 torchaudio.transforms.FrequencyMasking(freq_mask_param=spec_freq_mask), 
@@ -99,7 +98,10 @@ class CustomRAVDESSDataset(Dataset):
             self.spec_augment = None
         
         self.samples = self._collect_samples()
-        self._split_dataset()
+        
+        print(f"📊 Statistiche del dataset RAVDESS:")
+        dataset_name = "RAVDESS TRAINING SET" if self.is_train else "RAVDESS EVALUATION SET"
+        print_dataset_stats(self.samples, name=dataset_name)
        
 
 
@@ -221,6 +223,11 @@ class CustomRAVDESSDataset(Dataset):
             is_valid, error_msg = self._validate_audio_file(audio_file)
             if not is_valid:
                 continue
+                
+            # 8.5. FILTRO SPEAKER:
+            actor_id = metadata['actor']
+            if self.allowed_speakers is not None and actor_id not in self.allowed_speakers:
+                continue
             
             # 9. Se passa tutti i filtri, aggiungi ai samples
             # Aggiungi anche l'etichetta testuale dell'emozione
@@ -234,47 +241,43 @@ class CustomRAVDESSDataset(Dataset):
       
         return samples
        
-    def _split_dataset(self):
+    @staticmethod
+    def get_all_speakers(dataset_root):
         """
-        Split dataset into train/validation/test sets con split fisso basato su ID attori.
+        Scansione rapida della cartella dataset_root per restituire la lista di 
+        tutti gli speaker disponibili e i file audio. Utile per splittare in fold
+        PRIMA di istanziare il Dataset completo (che legge con librosa, ecc.).
         
-        Split predefinito:
-        - Training: Actors 01-20 (10 maschi dispari + 10 femmine pari)
-        - Validation: Actors 21-22 (1 maschio dispari + 1 femmina pari)
-        - Test: Actors 23-24 (1 maschio dispari + 1 femmina pari)
-        
-        Questo garantisce:
-        - Speaker-independent (nessun attore ripetuto tra i set)
-        - Split deterministico (sempre uguale)
-        - Bilanciamento perfetto di genere
+        Returns:
+            audio_files (list of str): Percorsi ai file audio.
+            speaker_ids (list of str): ID dello speaker (es '01', '02') associato ad ogni file.
         """
-        if len(self.samples) == 0:
-            raise ValueError("No samples found in dataset!")
+        import os
+        from pathlib import Path
         
-        # Split fisso basato su ID attori
-        train_actors = set(range(1, 21))      # 1-20
-        validation_actors = {21, 22}          # 21-22
-        test_actors = {23, 24}                # 23-24
+        dataset_root = Path(dataset_root)
+        audio_files = []
+        speaker_ids = []
         
-        print(f"📊 Statistiche del dataset RAVDESS:")
-        # Filtra i samples in base agli attori
-        if self.split == 'train':
-            self.samples = [s for s in self.samples if int(s['metadata']['actor']) in train_actors]
-            print_dataset_stats(self.samples, name="RAVDESS TRAINING SET")
+        if not dataset_root.exists():
+            return audio_files, speaker_ids
             
-        elif self.split == 'validation':
-            self.samples = [s for s in self.samples if int(s['metadata']['actor']) in validation_actors]
-            print_dataset_stats(self.samples, name="RAVDESS VALIDATION SET")
+        for file_path in dataset_root.rglob('*.wav'):
+            parts = file_path.stem.split('-')
             
-        elif self.split == 'test':
-            self.samples = [s for s in self.samples if int(s['metadata']['actor']) in test_actors]
-            print_dataset_stats(self.samples, name="RAVDESS TEST SET")
-            
-            
-        else:
-            raise ValueError(f"Split non valido: {self.split}. Usa 'train', 'validation' o 'test'.")
-    
-    
+            if len(parts) == 7:
+                # Applica filtri veloci:
+                modality = parts[0]
+                vocal_channel = parts[1]
+                emotion = parts[2]
+                actor = parts[6]
+                
+                # CustomRAVDESSDataset filters
+                if modality == '03' and vocal_channel == '01' and emotion in CustomRAVDESSDataset.EMOTION_DICT:
+                    audio_files.append(str(file_path))
+                    speaker_ids.append(actor)
+                    
+        return audio_files, speaker_ids
 
     def _process_waveform(self, waveform):
         """
@@ -335,11 +338,19 @@ class CustomRAVDESSDataset(Dataset):
         waveform = self._process_waveform(waveform)
         
         # 3. AUGMENTATION WAVEFORM (Solo per Training - Speech Emotion Recognition Safe)
-        if self.split == 'train':
+        if self.is_train:
+            # A. Additive Gaussian Noise with SNR (Se configurato per Noisy Student)
+            if self.add_gaussian_noise_snr is not None:
+                # noise in dB
+                snr = random.uniform(self.add_gaussian_noise_snr[0], self.add_gaussian_noise_snr[1])
+                signal_power = torch.mean(waveform ** 2)
+                noise_power = signal_power / (10 ** (snr / 10.0))
+                noise = torch.randn_like(waveform) * torch.sqrt(noise_power)
+                waveform = waveform + noise
             # A. Gaussian Noise Addition (50% probabilità) - CRITICO per Sad/Neutral
             # Serve a rompere la simmetria tra silenzio triste e silenzio neutro
             # Aiuta anche a rendere il modello robusto al rumore ambientale
-            if random.random() < 0.5:
+            elif random.random() < 0.5:
                 noise_level = random.uniform(0.001, 0.005)  # Livello basso ma variabile
                 noise = torch.randn_like(waveform) * noise_level
                 waveform = waveform + noise
@@ -388,8 +399,10 @@ class CustomRAVDESSDataset(Dataset):
         label_str = metadata['emotion_label']     # 'neutral', 'happy'...
         label_id = self.EMOTION_ID_MAP[label_str] # 0, 1, 2, 3
         return {
+            'sample_id': audio_path.stem,
             'audio_features': audio_features, # Tensor [1, 128, T] oppure [3, 128, T]
             'emotion_id': label_id,         # Int
+            'pseudo_emotion_id': label_id,  # Add this to match IEMOCAP pseudo-labels structurally
             'emotion': label_str,           # Str (utile per debug)
             'actor_id': metadata['actor']
         }

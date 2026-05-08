@@ -45,11 +45,12 @@ class CustomIEMOCAPDataset(Dataset):
         'ang': 3    # angry
     }
     
-    def __init__(self, dataset_root, split='train', transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=1024, target_hop_length=256, target_n_mels=128, spec_freq_mask=12, spec_time_mask=15):
+    def __init__(self, dataset_root, allowed_speakers=None, is_train=True, transform=None, target_length=3.0, target_sample_rate=16000, target_n_fft=1024, target_hop_length=256, target_n_mels=128, spec_freq_mask=12, spec_time_mask=15, pseudo_labels_dict=None, add_gaussian_noise_snr=None):
         """
         Args:
             dataset_root (str): Path to IEMOCAP dataset root folder
-            split (str): 'train', 'validation', or 'test'
+            allowed_speakers (list or set): List of speaker IDs to include (e.g., ['1F', '1M']). Returns all if None.
+            is_train (bool): If True, applies data augmentation
             transform (callable, optional): Optional transform (non usato, qui per compatibilità)
             target_length (float): Lunghezza target in secondi (default: 3.0s)
             target_sample_rate (int): Sample rate (16000 Hz)
@@ -58,12 +59,17 @@ class CustomIEMOCAPDataset(Dataset):
             target_n_mels (int): Numero di mel bins (128)
             spec_freq_mask (int): Parametro per FrequencyMasking in SpecAugment
             spec_time_mask (int): Parametro per TimeMasking in SpecAugment
+            pseudo_labels_dict (dict): Maps sample_id to integer pseudo label id for pseudo supervision
+            add_gaussian_noise_snr (tuple): E.g. (10, 20) for SNR range of additive gaussian noise.
         """
         self.dataset_root = Path(dataset_root)
-        self.split = split
+        self.allowed_speakers = set(allowed_speakers) if allowed_speakers is not None else None
+        self.is_train = is_train
         self.transform = transform
         self.spec_freq_mask = spec_freq_mask
         self.spec_time_mask = spec_time_mask
+        self.pseudo_labels_dict = pseudo_labels_dict
+        self.add_gaussian_noise_snr = add_gaussian_noise_snr
         
         # Audio processing parameters 
         self.target_sample_rate = target_sample_rate
@@ -90,7 +96,7 @@ class CustomIEMOCAPDataset(Dataset):
         
         # SpecAugment per Training (maschera parti dello spettrogramma)
         # Solo per training, non per validation/test
-        if self.split == 'train':
+        if self.is_train:
             self.spec_augment = torch.nn.Sequential(
                 torchaudio.transforms.FrequencyMasking(freq_mask_param=spec_freq_mask), 
                 torchaudio.transforms.TimeMasking(time_mask_param=spec_time_mask),    
@@ -102,11 +108,12 @@ class CustomIEMOCAPDataset(Dataset):
         # Collect all samples (folder_id, sample_id)
         self.samples = self._collect_samples()
         
-        # Split into train/test
-        self._split_dataset()
+        print(f"📊 Statistiche del dataset IEMOCAP:")
+        dataset_name = "IEMOCAP TRAINING SET" if self.is_train else "IEMOCAP EVALUATION SET"
+        print_iemocap_stats(self.samples, name=dataset_name)
      
         
-        print(f"✅ Dataset initialized: {len(self.samples)} {split} samples")
+        print(f"✅ Dataset initialized: {len(self.samples)} samples")
     
     def _validate_audio_file(self, audio_path, min_duration=0.5, max_duration=30.0):
         """
@@ -244,14 +251,29 @@ class CustomIEMOCAPDataset(Dataset):
                             actor = parts[0][-1]  # Estrai M o F da 'Ses01F'
                             impro_id = parts[1].replace("impro", "")  # Estrai '01' da 'impro01'
                             
+                            speaker_id = folder_id + actor  # es. '1F', '2M'
+
+                            # 8.5 FILTRO SPEAKER
+                            if self.allowed_speakers is not None and speaker_id not in self.allowed_speakers:
+                                continue
+
                             sample_data = {
                                 'session_id': folder_id,
                                 'audio_path': sample_file,
                                 'sample_id': sample_id,
                                 'actor': actor,
+                                'speaker_id': speaker_id,
                                 'impro_id': impro_id,
                                 'label': self.label_dict[sample_id]  # Accesso O(1) al dict
                             }
+                            
+                            # Se fornito il dizionario pseudo-labels e il sample ha una label valida
+                            if self.pseudo_labels_dict is not None:
+                                if sample_id in self.pseudo_labels_dict:
+                                    sample_data['pseudo_label'] = self.pseudo_labels_dict[sample_id]
+                                else:
+                                    continue # Skip sample if it wasn't confidently predicted by teacher
+                                    
                             samples.append(sample_data)
         
         print(f"✅ Raccolti {len(samples)} campioni audio validi")
@@ -266,37 +288,44 @@ class CustomIEMOCAPDataset(Dataset):
         print(f"   - Emozioni: {list(self.EMOTION_DICT.values())}")
         return samples
     
-    def _split_dataset(self, session_train=['1','2','3'], session_validation=['4'], session_test=['5']):
-        """Split dataset into train and test sets."""
-        if len(self.samples) == 0:
-            raise ValueError("No samples found in dataset!")
+    @staticmethod
+    def get_all_speakers(dataset_root):
+        """
+        Scansione rapida della cartella dataset_root per restituire la lista di 
+        tutti gli speaker disponibili e i file audio per i campioni IEMOCAP improvvisati.
         
+        Returns:
+            audio_files (list of str): Percorsi ai file audio.
+            speaker_ids (list of str): ID dello speaker (es '1F', '5M') associato ad ogni file.
+        """
+        import os
+        from pathlib import Path
         
+        dataset_root = Path(dataset_root)
+        audio_files = []
+        speaker_ids = []
         
-        # Filtra i samples in base alle sessioni
-        train_samples = [s for s in self.samples if s['session_id'] in session_train]
-        validation_samples = [s for s in self.samples if s['session_id'] in session_validation]
-        test_samples = [s for s in self.samples if s['session_id'] in session_test]
-
-
-        print(f"📊 Statistiche del dataset IEMOCAP:")
-        if self.split == 'train':
-            self.samples = train_samples
-            print_iemocap_stats(self.samples, name="IEMOCAP TRAINING SET")
-
-        elif self.split == 'validation':
-            self.samples = validation_samples
-            print_iemocap_stats(self.samples, name="IEMOCAP VALIDATION SET")    
-          
-        elif self.split == 'test':
-            self.samples = test_samples
-            print_iemocap_stats(self.samples, name="IEMOCAP TEST SET")
-        else:
-            raise ValueError("Invalid split name. Use 'train', 'validation', or 'test'.")
+        if not dataset_root.exists():
+            return audio_files, speaker_ids
             
-    
-    
-    
+        for folder in sorted(dataset_root.iterdir()):
+            if folder.is_dir() and folder.name.startswith("Session"):
+                folder_id = folder.name[-1] # Session ID (1-5)
+                wav_folder = folder / "sentences" / "wav"
+                
+                if wav_folder.exists():
+                    for sample_file in sorted(wav_folder.glob("**/*.wav")):
+                        sample_id = sample_file.stem
+                        if "impro" in sample_id:
+                            parts = sample_id.split("_")
+                            actor = parts[0][-1]
+                            speaker_id = folder_id + actor
+                            
+                            audio_files.append(str(sample_file))
+                            speaker_ids.append(speaker_id)
+                            
+        return audio_files, speaker_ids
+
     def __len__(self):
         """Return the total number of samples in the selected split."""
         return len(self.samples)
@@ -373,9 +402,17 @@ class CustomIEMOCAPDataset(Dataset):
         waveform = self._process_waveform(waveform)
         
         # 3. AUGMENTATION WAVEFORM (Solo per Training - Speech Emotion Recognition Safe)
-        if self.split == 'train':
-            # A. Gaussian Noise Addition (50% probabilità)
-            if random.random() < 0.5:
+        if self.is_train:
+            # A. Additive Gaussian Noise with SNR (Se configurato per Noisy Student)
+            if self.add_gaussian_noise_snr is not None:
+                # noise in dB
+                snr = random.uniform(self.add_gaussian_noise_snr[0], self.add_gaussian_noise_snr[1])
+                signal_power = torch.mean(waveform ** 2)
+                noise_power = signal_power / (10 ** (snr / 10.0))
+                noise = torch.randn_like(waveform) * torch.sqrt(noise_power)
+                waveform = waveform + noise
+            # A. Gaussian Noise Addition Classico (50% probabilità)
+            elif random.random() < 0.5:
                 noise_level = random.uniform(0.001, 0.005)
                 noise = torch.randn_like(waveform) * noise_level
                 waveform = waveform + noise
@@ -405,10 +442,16 @@ class CustomIEMOCAPDataset(Dataset):
         log_mel_spec = (log_mel_spec - mean) / (std + 1e-6)
         
         # 6. Return dictionary
-        return {
+        ret_dict = {
+            'sample_id': sample_info['sample_id'],
             'audio_features': log_mel_spec,  # Tensor [1, 128, T]
             'emotion_id': emotion_id,         # Int (0-3)
             'emotion': emotion_label,         # Str: 'neutral', 'happy', 'sad', 'angry'
             'actor_id': speaker_id            # Str: 'M' o 'F'
         }
+        
+        if 'pseudo_label' in sample_info:
+            ret_dict['pseudo_emotion_id'] = sample_info['pseudo_label']  # Passed already as integer/id
+            
+        return ret_dict
 

@@ -130,6 +130,11 @@ ALPHA_KL = 0.3   # 📚 Peso per KL Divergence (soft labels dal teacher) - defau
 NOISE_VARIANCE = 0.01         # 🔊 Varianza rumore gaussiano sui logit - default: 0.01 (range: 0.005-0.05)
 LABEL_SMOOTHING = 0.1         # 📊 Label smoothing per soft targets - default: 0.1 (range: 0.05-0.2)
 
+# ---- HARD PSEUDO-LABELS CONFIGURATION ----
+CONFIDENCE_THRESHOLD = 0.7  # 🎯 Soglia di confidenza per accettare una pseudo-label dal Teacher
+ADDITIVE_NOISE_SNR_MIN = 10 # 🔊 SNR Minimo per Additive Gaussian Noise sulla waveform
+ADDITIVE_NOISE_SNR_MAX = 20 # 🔊 SNR Massimo per Additive Gaussian Noise sulla waveform
+
 
 # ---- STUDENT TRAINING HYPERPARAMETERS ----
 # Iperparametri specifici per il training dello student network
