@@ -15,7 +15,7 @@ import librosa.display
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple
 import warnings
 import os
 
@@ -74,16 +74,19 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # ============================================================================
 
 # Questi parametri sono CRITICI per la risoluzione tempo-frequenza
-SAMPLE_RATE = 22050  # Hz - Standard in librosa, buon compromesso per voce umana
-N_FFT = 2048  # Dimensione della finestra FFT
-HOP_LENGTH = 512  # Numero di campioni tra finestre successive (25% overlap)
-WINDOW_LENGTH = 2048  # Lunghezza della finestra (uguale a N_FFT per Hann)
-N_MELS = 128  # Numero di bande mel (128 è standard, 64 è alternativa ridotta)
+SAMPLE_RATE = 16000  # Hz - Allineato al preprocessing del training
+N_FFT = 1024  # Dimensione della finestra FFT
+HOP_LENGTH = 256  # Numero di campioni tra finestre successive
+WINDOW_LENGTH = 1024  # Lunghezza della finestra (uguale a N_FFT per Hann)
+N_MELS = 128  # Numero di bande mel
+
+# Parametri per allineamento preprocessing
+TARGET_DURATION = 3.0  # secondi
+TARGET_SAMPLES = int(TARGET_DURATION * SAMPLE_RATE)  # 48000 @ 16kHz
 
 # Parametri supplementari per feature extraction
-N_MFCC = 13  # Numero di coefficienti MFCC
-FMIN = 80  # Frequenza minima (Hz) - sotto voce maschile tipica
-FMAX = 7600  # Frequenza massima (Hz) - sopra la voce femminile tipica
+FMIN = 0.0  # Hz - coerente con default torchaudio
+FMAX = SAMPLE_RATE / 2  # Hz - Nyquist
 
 # Parametri per pitch extraction (Yin algorithm)
 FMIN_PITCH = 75  # Hz
@@ -123,10 +126,39 @@ def print_stft_parameters():
     print(f"Risoluzione Temporale:    {time_resolution*1000:.2f} ms/frame")
     print(f"Frequenza di Nyquist:     {nyquist} Hz")
     print(f"\n--- MOTIVAZIONE SCELTE ---")
-    print(f"N_FFT={N_FFT}: Rappresenta ~93ms di segnale (buon compromesso voce)")
-    print(f"HOP_LENGTH={HOP_LENGTH}: 25% overlap tra finestre (smooth representation)")
+    window_ms = (N_FFT / SAMPLE_RATE) * 1000
+    hop_ms = (HOP_LENGTH / SAMPLE_RATE) * 1000
+    overlap = 1 - (HOP_LENGTH / WINDOW_LENGTH)
+    print(f"N_FFT={N_FFT}: Rappresenta ~{window_ms:.1f}ms di segnale (buon compromesso voce)")
+    print(f"HOP_LENGTH={HOP_LENGTH}: {hop_ms:.1f}ms tra frame (~{overlap*100:.0f}% overlap)")
     print(f"N_MELS={N_MELS}: Conforme scala Mel biologica umana (udito non lineare)")
     print("="*80 + "\n")
+
+
+def process_waveform(y: np.ndarray, target_len: int) -> np.ndarray:
+    """
+    Applica peak-centered crop con shift dinamico + padding finale se necessario.
+    """
+    n = y.shape[0]
+    if n > target_len:
+        peak_idx = int(np.argmax(np.abs(y)))
+        half_window = target_len // 2
+        ideal_start = peak_idx - half_window
+        actual_start = max(0, min(ideal_start, n - target_len))
+        y = y[actual_start : actual_start + target_len]
+    elif n < target_len:
+        pad = target_len - n
+        y = np.pad(y, (0, pad), mode='constant')
+    return y
+
+
+def load_processed_audio(audio_path: str) -> Tuple[np.ndarray, int]:
+    """
+    Carica audio, resample a SAMPLE_RATE e applica il crop/padding a 3s.
+    """
+    y, sr = librosa.load(audio_path, sr=SAMPLE_RATE)
+    y = process_waveform(y, TARGET_SAMPLES)
+    return y, sr
 
 
 def analyze_logmel_spectrogram(audio_path: str, title: str = "Log-Mel Spectrogram") -> np.ndarray:
@@ -145,19 +177,20 @@ def analyze_logmel_spectrogram(audio_path: str, title: str = "Log-Mel Spectrogra
     S_mel : np.ndarray
         Log-Mel spectrogram normalizzato
     """
-    # Carica audio
-    y, sr = librosa.load(audio_path, sr=SAMPLE_RATE)
-    
-    # Calcola STFT
-    S = librosa.stft(y, n_fft=N_FFT, hop_length=HOP_LENGTH, window='hann', 
-                     win_length=WINDOW_LENGTH)
-    
-    # Converti in magnitudine
-    S_mag = np.abs(S)
-    
+    # Carica audio e applica preprocess (allineato al training)
+    y, sr = load_processed_audio(audio_path)
+
     # Applica scala Mel
-    mel_spec = librosa.feature.melspectrogram(S=S_mag, n_mels=N_MELS, 
-                                              fmin=FMIN, fmax=FMAX)
+    mel_spec = librosa.feature.melspectrogram(
+        y=y,
+        sr=sr,
+        n_fft=N_FFT,
+        hop_length=HOP_LENGTH,
+        win_length=WINDOW_LENGTH,
+        n_mels=N_MELS,
+        fmin=FMIN,
+        fmax=FMAX
+    )
     
     # Log scaling (con epsilon per stabilità numerica)
     S_mel = librosa.power_to_db(mel_spec, ref=np.max, top_db=80)
@@ -192,33 +225,31 @@ def analyze_logmel_spectrogram(audio_path: str, title: str = "Log-Mel Spectrogra
 
 def extract_low_level_features(audio_path: str, label: str = "Audio") -> Tuple[np.ndarray, ...]:
     """
-    Estrae feature di basso livello: Waveform, MFCCs, ZCR, Spectral Rolloff.
+    Estrae feature a basso livello allineate al training:
+    - Waveform (crop/pad a 3s)
+    - Log-Mel spectrogram
+    - Mel spectral centroid (Hz)
+
     Ritorna anche il segnale e sample rate per usi ulteriori.
-    
-    Parametri:
-    -----------
-    audio_path : str
-        Percorso al file audio
-    label : str
-        Etichetta per il dominio (es. "RAVDESS", "IEMOCAP")
-        
-    Ritorna:
-    --------
-    (y, sr, mfcc, zcr, spec_rolloff)
     """
-    # Carica audio
-    y, sr = librosa.load(audio_path, sr=SAMPLE_RATE)
-    
-    # 1. MFCCs
-    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=N_MFCC)
-    
-    # 2. Zero Crossing Rate
-    zcr = librosa.feature.zero_crossing_rate(y)[0]
-    
-    # 3. Spectral Rolloff (frequenza sotto cui il 85% dell'energia è concentrata)
-    spec_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
-    
-    return y, sr, mfcc, zcr, spec_rolloff
+    y, sr = load_processed_audio(audio_path)
+
+    mel_spec = librosa.feature.melspectrogram(
+        y=y,
+        sr=sr,
+        n_fft=N_FFT,
+        hop_length=HOP_LENGTH,
+        win_length=WINDOW_LENGTH,
+        n_mels=N_MELS,
+        fmin=FMIN,
+        fmax=FMAX
+    )
+    log_mel = librosa.power_to_db(mel_spec, ref=np.max, top_db=80)
+
+    mel_freqs = librosa.mel_frequencies(n_mels=N_MELS, fmin=FMIN, fmax=FMAX)
+    mel_centroid = np.sum(mel_spec * mel_freqs[:, None], axis=0) / (np.sum(mel_spec, axis=0) + 1e-10)
+
+    return y, sr, log_mel, mel_centroid
 
 
 def plot_multi_feature_comparison(audio_path_1: str, audio_path_2: str, 
@@ -237,12 +268,12 @@ def plot_multi_feature_comparison(audio_path_1: str, audio_path_2: str,
     """
     
     # Estrai feature da entrambi i file
-    y1, sr1, mfcc1, zcr1, sr1_orcl = extract_low_level_features(audio_path_1, label_1)
-    y2, sr2, mfcc2, zcr2, sr2_orcl = extract_low_level_features(audio_path_2, label_2)
+    y1, sr1, log_mel1, centroid1 = extract_low_level_features(audio_path_1, label_1)
+    y2, sr2, log_mel2, centroid2 = extract_low_level_features(audio_path_2, label_2)
     
-    # Crea figura con 5 righe, 2 colonne
-    fig, axes = plt.subplots(5, 2, figsize=(16, 14), dpi=150)
-    fig.suptitle(f'Feature Extraction Comparison: {label_1} vs {label_2}', 
+    # Crea figura con 4 righe, 2 colonne
+    fig, axes = plt.subplots(4, 2, figsize=(16, 12), dpi=150)
+    fig.suptitle(f'Log-Mel + Centroid Comparison: {label_1} vs {label_2}', 
                  fontsize=16, fontweight='bold', y=0.995)
     
     # ========================
@@ -262,61 +293,46 @@ def plot_multi_feature_comparison(audio_path_1: str, audio_path_2: str,
     axes[0, 1].grid(True, alpha=0.3)
     
     # ========================
-    # ROW 2: MFCC
+    # ROW 2: LOG-MEL SPECTROGRAM
     # ========================
-    img1_mfcc = axes[1, 0].imshow(mfcc1, aspect='auto', origin='lower', cmap='viridis')
-    axes[1, 0].set_title(f'{label_1} - MFCCs (n_mfcc={N_MFCC})', fontweight='bold')
-    axes[1, 0].set_ylabel('MFCC Coefficient', fontsize=10)
+    img1_mel = axes[1, 0].imshow(log_mel1, aspect='auto', origin='lower', cmap='magma')
+    axes[1, 0].set_title(f'{label_1} - Log-Mel Spectrogram', fontweight='bold')
+    axes[1, 0].set_ylabel('Mel Bin', fontsize=10)
     axes[1, 0].set_xlabel('Time Frame', fontsize=10)
-    plt.colorbar(img1_mfcc, ax=axes[1, 0])
+    plt.colorbar(img1_mel, ax=axes[1, 0], label='dB')
     
-    img2_mfcc = axes[1, 1].imshow(mfcc2, aspect='auto', origin='lower', cmap='viridis')
-    axes[1, 1].set_title(f'{label_2} - MFCCs (n_mfcc={N_MFCC})', fontweight='bold')
-    axes[1, 1].set_ylabel('MFCC Coefficient', fontsize=10)
+    img2_mel = axes[1, 1].imshow(log_mel2, aspect='auto', origin='lower', cmap='magma')
+    axes[1, 1].set_title(f'{label_2} - Log-Mel Spectrogram', fontweight='bold')
+    axes[1, 1].set_ylabel('Mel Bin', fontsize=10)
     axes[1, 1].set_xlabel('Time Frame', fontsize=10)
-    plt.colorbar(img2_mfcc, ax=axes[1, 1])
+    plt.colorbar(img2_mel, ax=axes[1, 1], label='dB')
     
     # ========================
-    # ROW 3: ZERO CROSSING RATE
+    # ROW 3: MEL SPECTRAL CENTROID
     # ========================
-    frames1 = np.arange(len(zcr1))
-    frames2 = np.arange(len(zcr2))
+    frames1 = np.arange(len(centroid1))
+    frames2 = np.arange(len(centroid2))
+    times1 = librosa.frames_to_time(frames1, sr=sr1, hop_length=HOP_LENGTH)
+    times2 = librosa.frames_to_time(frames2, sr=sr2, hop_length=HOP_LENGTH)
     
-    axes[2, 0].plot(frames1, zcr1, linewidth=1.5, color='green', alpha=0.8)
-    axes[2, 0].fill_between(frames1, zcr1, alpha=0.3, color='green')
-    axes[2, 0].set_title(f'{label_1} - Zero Crossing Rate', fontweight='bold')
-    axes[2, 0].set_ylabel('ZCR', fontsize=10)
-    axes[2, 0].set_xlabel('Frame', fontsize=10)
+    axes[2, 0].plot(times1, centroid1, linewidth=1.5, color='teal', alpha=0.8)
+    axes[2, 0].fill_between(times1, centroid1, alpha=0.3, color='teal')
+    axes[2, 0].set_title(f'{label_1} - Mel Spectral Centroid', fontweight='bold')
+    axes[2, 0].set_ylabel('Frequency (Hz)', fontsize=10)
+    axes[2, 0].set_xlabel('Time (s)', fontsize=10)
     axes[2, 0].grid(True, alpha=0.3)
     
-    axes[2, 1].plot(frames2, zcr2, linewidth=1.5, color='orange', alpha=0.8)
-    axes[2, 1].fill_between(frames2, zcr2, alpha=0.3, color='orange')
-    axes[2, 1].set_title(f'{label_2} - Zero Crossing Rate', fontweight='bold')
-    axes[2, 1].set_ylabel('ZCR', fontsize=10)
-    axes[2, 1].set_xlabel('Frame', fontsize=10)
+    axes[2, 1].plot(times2, centroid2, linewidth=1.5, color='darkorange', alpha=0.8)
+    axes[2, 1].fill_between(times2, centroid2, alpha=0.3, color='darkorange')
+    axes[2, 1].set_title(f'{label_2} - Mel Spectral Centroid', fontweight='bold')
+    axes[2, 1].set_ylabel('Frequency (Hz)', fontsize=10)
+    axes[2, 1].set_xlabel('Time (s)', fontsize=10)
     axes[2, 1].grid(True, alpha=0.3)
-    
-    # ========================
-    # ROW 4: SPECTRAL ROLLOFF
-    # ========================
-    axes[3, 0].plot(frames1, sr1_orcl, linewidth=1.5, color='purple', alpha=0.8)
-    axes[3, 0].fill_between(frames1, sr1_orcl, alpha=0.3, color='purple')
-    axes[3, 0].set_title(f'{label_1} - Spectral Rolloff', fontweight='bold')
-    axes[3, 0].set_ylabel('Frequency (Hz)', fontsize=10)
-    axes[3, 0].set_xlabel('Frame', fontsize=10)
-    axes[3, 0].grid(True, alpha=0.3)
-    
-    axes[3, 1].plot(frames2, sr2_orcl, linewidth=1.5, color='red', alpha=0.8)
-    axes[3, 1].fill_between(frames2, sr2_orcl, alpha=0.3, color='red')
-    axes[3, 1].set_title(f'{label_2} - Spectral Rolloff', fontweight='bold')
-    axes[3, 1].set_ylabel('Frequency (Hz)', fontsize=10)
-    axes[3, 1].set_xlabel('Frame', fontsize=10)
-    axes[3, 1].grid(True, alpha=0.3)
     
     # ========================
     # ROW 5: STATISTICHE RIASSUNTIVE
     # ========================
-    ax_stats = axes[4, :]
+    ax_stats = axes[3, :]
     ax_stats = ax_stats.flatten()
     
     # Nascondi i subplot inutilizzati
@@ -332,8 +348,9 @@ def plot_multi_feature_comparison(audio_path_1: str, audio_path_2: str,
         ['Metrica', label_1, label_2],
         ['Durata (s)', f'{len(y1)/sr1:.2f}', f'{len(y2)/sr2:.2f}'],
         ['RMS Energy', f'{np.sqrt(np.mean(y1**2)):.4f}', f'{np.sqrt(np.mean(y2**2)):.4f}'],
-        ['Mean ZCR', f'{np.mean(zcr1):.4f}', f'{np.mean(zcr2):.4f}'],
-        ['Mean Spectral Rolloff (Hz)', f'{np.mean(sr1_orcl):.0f}', f'{np.mean(sr2_orcl):.0f}'],
+        ['Mean Mel Centroid (Hz)', f'{np.mean(centroid1):.0f}', f'{np.mean(centroid2):.0f}'],
+        ['Std Mel Centroid (Hz)', f'{np.std(centroid1):.0f}', f'{np.std(centroid2):.0f}'],
+        ['Mean Log-Mel (dB)', f'{np.mean(log_mel1):.2f}', f'{np.mean(log_mel2):.2f}'],
     ]
     
     table = ax_table.table(cellText=stats_data, cellLoc='center', loc='center',
