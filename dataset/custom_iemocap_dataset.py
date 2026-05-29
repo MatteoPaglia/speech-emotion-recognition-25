@@ -54,8 +54,8 @@ class CustomIEMOCAPDataset(Dataset):
             transform (callable, optional): Optional transform (non usato, qui per compatibilità)
             target_length (float): Lunghezza target in secondi (default: 3.0s)
             target_sample_rate (int): Sample rate (16000 Hz)
-            target_n_fft (int): FFT size (2048)
-            target_hop_length (int): Hop length (512)
+            target_n_fft (int): FFT size (1024)
+            target_hop_length (int): Hop length (256)
             target_n_mels (int): Numero di mel bins (128)
             spec_freq_mask (int): Parametro per FrequencyMasking in SpecAugment
             spec_time_mask (int): Parametro per TimeMasking in SpecAugment
